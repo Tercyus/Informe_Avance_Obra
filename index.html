@@ -1,0 +1,2098 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Informe de Avance de Obra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{
+  --graphite:#1c2128; --panel:#242a33; --panel-2:#2c333d; --panel-3:#333b46;
+  --hairline:#3a424d; --paper:#fdfcf8; --paper-line:#e4e0d3;
+  --accent:#c9772a; --accent-soft:#e6a25c; --steel:#6f93ad; --steel-dim:#3d5a73;
+  --text:#e8e6e0; --text-dim:#9aa3ad; --text-faint:#6b7480;
+  --ink:#1a1d21; --ink-dim:#565049;
+  --ok:#5a8f6b; --danger:#b1493f;
+  --doc-font-family:Arial,Helvetica,sans-serif;
+  --doc-fs:10.3pt;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  box-sizing:border-box;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--graphite); color:var(--text);
+  font-family:"IBM Plex Sans",system-ui,sans-serif; font-size:14px; line-height:1.5;
+  overflow:hidden;
+}
+::selection{background:var(--accent); color:#1a1208;}
+.data{font-family:"IBM Plex Mono",monospace;}
+
+/* ---------- layout shell ---------- */
+#app{display:flex; flex-direction:column; height:100%;}
+#topbar{
+  display:flex; align-items:center; gap:18px; padding:10px 18px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));
+  background:var(--panel); border-bottom:1px solid var(--hairline); flex:0 0 auto; z-index:20;
+}
+#brand{display:flex; align-items:baseline; gap:8px; margin-right:6px;}
+#brand .mark{font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:13px; color:var(--accent); letter-spacing:.02em;}
+#brand .name{font-weight:600; font-size:14.5px; color:var(--text);}
+#save-status{font-size:12px; color:var(--text-faint); font-family:"IBM Plex Mono",monospace; display:flex; align-items:center; gap:6px; min-width:150px;}
+#save-status .dot{width:6px; height:6px; border-radius:50%; background:var(--text-faint); flex:0 0 auto;}
+#save-status.saving .dot{background:var(--accent);}
+#save-status.saved .dot{background:var(--ok);}
+.topbar-spacer{flex:1;}
+.tb-group{display:flex; align-items:center; gap:8px;}
+.tb-select{
+  background:var(--panel-2); color:var(--text); border:1px solid var(--hairline); border-radius:5px;
+  padding:6px 8px; font-size:12.5px; font-family:inherit;
+}
+.btn{
+  border:1px solid var(--hairline); background:var(--panel-2); color:var(--text);
+  padding:7px 13px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;
+  display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+}
+.btn:hover{background:var(--panel-3);}
+.btn:active{transform:translateY(1px);}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.btn-primary{background:var(--accent); border-color:var(--accent); color:#211405; font-weight:600;}
+.btn-primary:hover{background:var(--accent-soft);}
+.btn-ghost{background:transparent; border-color:transparent; color:var(--text-dim); padding:6px 8px;}
+.btn-ghost:hover{background:var(--panel-2); color:var(--text);}
+.btn-danger-ghost{background:transparent; border-color:transparent; color:var(--danger); padding:4px 6px; font-size:12px;}
+.btn-danger-ghost:hover{background:rgba(177,73,63,.12);}
+.btn-icon{padding:6px 8px; font-size:13px;}
+
+#body-row{flex:1; display:flex; min-height:0;}
+
+/* ---------- sidebar ---------- */
+#sidebar{
+  width:380px; flex:0 0 auto; background:var(--panel); border-right:1px solid var(--hairline);
+  overflow-y:auto; padding:14px 14px 60px;
+}
+.section{border:1px solid var(--hairline); border-radius:9px; margin-bottom:10px; background:var(--panel-2); overflow:hidden;}
+.section > summary{
+  list-style:none; cursor:pointer; padding:11px 13px; display:flex; align-items:center; gap:9px;
+  font-weight:600; font-size:13px; color:var(--text); user-select:none;
+}
+.section > summary::-webkit-details-marker{display:none;}
+.section > summary::before{content:"›"; font-size:15px; color:var(--text-faint); transition:transform .15s; width:10px; display:inline-block;}
+.section[open] > summary::before{transform:rotate(90deg);}
+.section .num{font-family:"IBM Plex Mono",monospace; color:var(--accent); font-size:12px; font-weight:600;}
+.section-body{padding:4px 13px 14px;}
+.field{margin-bottom:10px;}
+.field label{display:block; font-size:11.5px; color:var(--text-dim); margin-bottom:4px; font-weight:500;}
+.field input[type=text], .field input[type=date], .field input[type=number], .field textarea, .field select{
+  width:100%; background:var(--panel-3); border:1px solid var(--hairline); color:var(--text);
+  padding:8px 9px; border-radius:5px; font-family:inherit; font-size:13px;
+}
+.field textarea{resize:vertical; min-height:70px; line-height:1.5;}
+.field input:focus, .field textarea:focus, .field select:focus{outline:none; border-color:var(--steel);}
+.row2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
+.hint{font-size:11px; color:var(--text-faint); margin-top:3px; line-height:1.4;}
+.chip-row{display:flex; gap:6px; flex-wrap:wrap;}
+.chip{
+  border:1px solid var(--hairline); background:var(--panel-3); color:var(--text-dim); font-size:12px;
+  padding:5px 10px; border-radius:20px; cursor:pointer; font-family:"IBM Plex Mono",monospace;
+}
+.chip.active{background:var(--accent); border-color:var(--accent); color:#211405; font-weight:600;}
+
+/* membrete uploader */
+.dropzone{
+  border:1.5px dashed var(--hairline); border-radius:8px; padding:16px; text-align:center; cursor:pointer;
+  color:var(--text-dim); font-size:12.5px; background:var(--panel-3);
+}
+.dropzone:hover{border-color:var(--steel); color:var(--text);}
+.membrete-preview{display:flex; align-items:center; gap:10px; margin-top:8px;}
+.membrete-preview img{width:56px; height:72px; object-fit:cover; border-radius:4px; border:1px solid var(--hairline);}
+
+/* photo list */
+.foto-card{
+  display:flex; gap:9px; background:var(--panel-3); border:1px solid var(--hairline); border-radius:7px;
+  padding:8px; margin-bottom:8px;
+}
+.foto-card img{width:64px; height:64px; object-fit:cover; border-radius:5px; flex:0 0 auto;}
+.foto-fields{flex:1; min-width:0;}
+.foto-fields input{
+  width:100%; background:var(--panel-2); border:1px solid var(--hairline); color:var(--text);
+  padding:5px 7px; border-radius:4px; font-size:12px; margin-bottom:5px; font-family:inherit;
+}
+.foto-fields input:last-child{margin-bottom:0;}
+.foto-actions{display:flex; flex-direction:column; gap:3px; flex:0 0 auto;}
+.foto-actions button{
+  background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; padding:2px 4px; border-radius:3px;
+}
+.foto-actions button:hover{background:var(--panel-2); color:var(--text);}
+.foto-actions button.del:hover{color:var(--danger);}
+.upload-btn{
+  width:100%; padding:10px; border:1.5px dashed var(--hairline); border-radius:7px; background:var(--panel-3);
+  color:var(--text-dim); cursor:pointer; font-size:12.5px; font-family:inherit; margin-bottom:10px;
+}
+.upload-btn:hover{border-color:var(--accent); color:var(--text);}
+
+/* resumen items */
+.item-card{display:flex; gap:8px; align-items:flex-start; background:var(--panel-3); border:1px solid var(--hairline); border-radius:7px; padding:8px; margin-bottom:7px;}
+.item-card textarea{
+  flex:1; background:var(--panel-2); border:1px solid var(--hairline); color:var(--text);
+  padding:6px 8px; border-radius:4px; font-size:12.5px; font-family:inherit; resize:vertical; min-height:40px; line-height:1.4;
+}
+.btn-ai{
+  width:100%; background:linear-gradient(135deg, var(--steel-dim), var(--accent)); border:none; color:#fff;
+  padding:9px 13px; border-radius:6px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;
+  display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:10px;
+}
+.btn-ai:hover{filter:brightness(1.08);}
+.btn-ai:disabled{opacity:.55; cursor:wait;}
+
+/* toggle switch */
+.switch-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;}
+.switch-row .lbl{font-size:12px; color:var(--text-dim);}
+.switch{position:relative; width:36px; height:20px; flex:0 0 auto;}
+.switch input{opacity:0; width:100%; height:100%; margin:0; position:absolute; cursor:pointer; z-index:1;}
+.switch .track{position:absolute; inset:0; background:var(--panel-3); border:1px solid var(--hairline); border-radius:20px; transition:.15s;}
+.switch .knob{position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--text-faint); transition:.15s;}
+.switch input:checked ~ .track{background:var(--accent); border-color:var(--accent);}
+.switch input:checked ~ .knob{transform:translateX(16px); background:#211405;}
+
+/* cronograma sidebar */
+.crono-card{background:var(--panel-3); border:1px solid var(--hairline); border-radius:7px; padding:8px; margin-bottom:8px;}
+.crono-card .row2{margin-bottom:5px;}
+.crono-card input{
+  width:100%; background:var(--panel-2); border:1px solid var(--hairline); color:var(--text);
+  padding:5px 7px; border-radius:4px; font-size:12px; margin-bottom:5px; font-family:inherit;
+}
+.crono-card .row4{display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:5px; align-items:center;}
+.crono-card .row4 input{margin-bottom:0;}
+.crono-total{font-size:11.5px; color:var(--text-dim); text-align:right; margin:2px 0 10px;}
+.crono-total b{color:var(--accent); font-family:"IBM Plex Mono",monospace;}
+
+/* version table */
+table.vt{width:100%; border-collapse:collapse; font-size:11.5px;}
+table.vt th{text-align:left; color:var(--text-faint); font-weight:500; padding:4px 6px; border-bottom:1px solid var(--hairline);}
+table.vt td{padding:5px 6px; border-bottom:1px solid var(--hairline); color:var(--text-dim); vertical-align:top;}
+table.vt td.v{font-family:"IBM Plex Mono",monospace; color:var(--accent);}
+
+/* ---------- canvas / preview ---------- */
+#canvas-wrap{flex:1; overflow:auto; background:
+    linear-gradient(var(--graphite),var(--graphite)),
+    repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(255,255,255,.02) 27px, rgba(255,255,255,.02) 28px);
+  padding:34px 0 100px;
+}
+#canvas{display:flex; flex-direction:column; align-items:center; gap:26px;}
+.pagina{
+  position:relative; background:var(--paper); color:var(--ink);
+  box-shadow:0 10px 30px rgba(0,0,0,.45); overflow:hidden; flex:0 0 auto;
+  font-family:var(--doc-font-family);
+}
+.pagina, .pagina *{font-family:var(--doc-font-family) !important;}
+.pagina .bg-membrete{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:0;}
+.pagina .contenido{position:relative; z-index:1; height:100%; display:flex; flex-direction:column;}
+.pagina .zona-inutil{flex:0 0 auto;}
+.pagina .zona-util{flex:1; min-height:0; display:flex; flex-direction:column;}
+
+/* portada */
+.portada-titulo{text-align:center; margin-top:6mm;}
+.portada-titulo .eyebrow{font-size:calc(var(--doc-fs)*0.9); letter-spacing:.14em; color:var(--steel-dim);}
+.portada-titulo h1{font-size:calc(var(--doc-fs)*2.1); margin:5px 0 2px; font-weight:700; color:var(--ink);}
+.portada-titulo .sub{font-size:calc(var(--doc-fs)*1.07); color:var(--ink-dim);}
+.datos-proyecto{margin:9mm 0; border-top:1px solid var(--paper-line); border-bottom:1px solid var(--paper-line); padding:5mm 0;}
+.datos-proyecto .dp-row{display:grid; grid-template-columns:38mm 1fr; gap:2mm; font-size:var(--doc-fs); padding:1.6mm 0;}
+.datos-proyecto .dp-row .k{font-size:calc(var(--doc-fs)*0.82); color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em;}
+.datos-proyecto .dp-row .v{font-weight:500;}
+.avance-box{display:flex; align-items:center; gap:6mm; margin:6mm 0; padding:5mm; border:1px solid var(--paper-line); border-radius:2mm;}
+.avance-num{font-size:calc(var(--doc-fs)*2.5); font-weight:600; color:var(--accent);}
+.avance-bar{flex:1; height:2.6mm; background:var(--paper-line); border-radius:2mm; overflow:hidden;}
+.avance-bar > div{height:100%; background:var(--accent);}
+.cv-title{font-size:calc(var(--doc-fs)*0.82); letter-spacing:.08em; color:var(--steel-dim); margin:6mm 0 2mm; text-transform:uppercase;}
+table.cv-print{width:100%; border-collapse:collapse; font-size:calc(var(--doc-fs)*0.84);}
+table.cv-print th{text-align:left; font-weight:600; color:var(--ink-dim); border-bottom:1px solid var(--ink); padding:1.2mm 2mm;}
+table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);}
+
+/* section pages */
+.hoja-titulo{display:flex; align-items:baseline; justify-content:space-between; border-bottom:1.4pt solid var(--ink); padding-bottom:2mm; margin-bottom:4mm;}
+.hoja-titulo h2{font-size:calc(var(--doc-fs)*1.26); margin:0; font-weight:700;}
+.hoja-titulo .folio{font-size:calc(var(--doc-fs)*0.78); color:var(--ink-dim);}
+.cuerpo-texto{font-size:var(--doc-fs); line-height:1.65; white-space:pre-wrap;}
+.cuerpo-texto:empty::before{content:attr(data-empty); color:#b8b2a4; font-style:italic;}
+.resumen-lista{list-style:none; margin:0; padding:0;}
+.resumen-lista li{font-size:var(--doc-fs); line-height:1.6; padding:0 0 2.4mm 4.2mm; position:relative;}
+.resumen-lista li::before{content:"–"; position:absolute; left:0; color:var(--accent); font-weight:700;}
+.resumen-vacio{color:#b8b2a4; font-style:italic; font-size:var(--doc-fs);}
+
+/* photo grid */
+.foto-grid{flex:1; min-height:0; display:grid; gap:5mm;}
+.foto-grid.n1{grid-template-columns:1fr; grid-template-rows:1fr;}
+.foto-grid.n2{grid-template-columns:1fr 1fr; grid-template-rows:1fr;}
+.foto-grid.n4{grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;}
+.foto-grid.n6{grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr 1fr;}
+.foto-item{display:flex; flex-direction:column; min-height:0;}
+.foto-item .ph{flex:1; min-height:0; background:#eeece4; border:1px solid var(--paper-line); overflow:hidden;}
+.foto-item .ph img{width:100%; height:100%; object-fit:cover; display:block;}
+.foto-item .cap{font-size:calc(var(--doc-fs)*0.74); color:var(--ink-dim); margin-top:1.3mm; line-height:1.35;}
+.foto-item .cap b{color:var(--ink); font-weight:600;}
+
+/* cronograma */
+.crono-table{width:100%; border-collapse:collapse; font-size:calc(var(--doc-fs)*0.82); margin-bottom:5mm;}
+.crono-table th{text-align:left; font-weight:600; color:var(--ink-dim); border-bottom:1px solid var(--ink); padding:1.4mm 2mm;}
+.crono-table td{padding:1.4mm 2mm; border-bottom:.5px solid var(--paper-line); vertical-align:middle;}
+.crono-table td.num{font-variant-numeric:tabular-nums; text-align:center;}
+.gantt-track{position:relative; height:3mm; background:var(--paper-line); border-radius:1mm; width:100%; min-width:26mm;}
+.gantt-fill-bg{position:absolute; top:0; bottom:0; background:#d8c9b3; border-radius:1mm;}
+.gantt-fill{position:absolute; top:0; bottom:0; background:var(--accent); border-radius:1mm;}
+.crono-resumen{display:flex; gap:8mm; font-size:calc(var(--doc-fs)*0.86); color:var(--ink-dim); margin-bottom:4mm;}
+.crono-resumen b{color:var(--ink);}
+
+/* firmas */
+.firmas-row{display:flex; gap:14mm; margin-top:auto; padding-top:10mm;}
+.firma-box{flex:1; text-align:center;}
+.firma-box .linea{border-top:.8pt solid var(--ink); margin-bottom:2mm;}
+.firma-box .nom{font-weight:600; font-size:calc(var(--doc-fs)*0.94);}
+.firma-box .cargo{font-size:calc(var(--doc-fs)*0.82); color:var(--ink-dim);}
+
+.pagina .num-pagina{position:absolute; bottom:6mm; right:9mm; font-size:calc(var(--doc-fs)*0.71); color:var(--ink-dim); z-index:1;}
+
+/* zoom control */
+.zoom-scale{transform-origin:top center;}
+
+[contenteditable]{outline:none;}
+[contenteditable]:focus{box-shadow:0 0 0 2px var(--steel) inset;}
+
+/* empty state */
+.empty-fotos{
+  display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-faint);
+  font-size:12.5px; text-align:center; border:1px dashed var(--hairline); border-radius:8px; padding:20px;
+}
+
+@media print{
+  body *{visibility:hidden;}
+}
+
+/* ---------- pantalla de login ---------- */
+#screen-login{
+  height:100%; display:flex; align-items:center; justify-content:center; padding:20px;
+  background:radial-gradient(circle at 30% 20%, #2a323d 0%, var(--graphite) 60%);
+}
+.login-box{width:100%; max-width:360px; background:var(--panel); border:1px solid var(--hairline); border-radius:14px; padding:34px 30px; text-align:center;}
+.login-mark{font-family:"IBM Plex Mono",monospace; color:var(--accent); font-weight:700; letter-spacing:.06em; font-size:13px; margin-bottom:10px;}
+.login-box h1{font-size:19px; margin:0 0 8px; color:var(--text);}
+.login-sub{font-size:12.5px; color:var(--text-dim); line-height:1.5; margin:0 0 18px;}
+#login-form input{
+  width:100%; background:var(--panel-3); border:1px solid var(--hairline); color:var(--text);
+  padding:11px 12px; border-radius:7px; font-family:inherit; font-size:13.5px; margin-bottom:10px; text-align:center;
+}
+.login-error{color:var(--danger); font-size:12px; margin-top:12px;}
+
+/* ---------- pantalla de inicio ---------- */
+#screen-home{height:100%; overflow-y:auto; display:flex; flex-direction:column;}
+.home-header{
+  display:flex; align-items:center; gap:14px; padding:14px 24px;
+  padding-top:calc(14px + env(safe-area-inset-top,0px));
+  background:var(--panel); border-bottom:1px solid var(--hairline); flex:0 0 auto;
+}
+.user-chip{display:flex; align-items:center; gap:9px;}
+.avatar-badge{
+  width:30px; height:30px; border-radius:50%; flex:0 0 auto; background:var(--steel-dim); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; font-family:"IBM Plex Mono",monospace;
+}
+.user-chip .un{font-size:12.5px; font-weight:600; color:var(--text);}
+.user-chip .ur{font-size:10.5px; color:var(--accent); font-family:"IBM Plex Mono",monospace; text-transform:uppercase; letter-spacing:.04em;}
+.home-body{max-width:900px; width:100%; margin:0 auto; padding:26px 24px 80px; flex:1;}
+.home-breadcrumb{font-size:12.5px; color:var(--text-dim); margin-bottom:14px; display:flex; align-items:center; gap:6px;}
+.home-breadcrumb a{color:var(--steel); cursor:pointer; text-decoration:none;}
+.home-breadcrumb a:hover{text-decoration:underline;}
+.home-toolbar{display:flex; align-items:center; gap:9px; margin-bottom:18px;}
+.home-list{display:flex; flex-direction:column; gap:9px;}
+.home-empty{text-align:center; color:var(--text-faint); padding:50px 20px; border:1px dashed var(--hairline); border-radius:10px; font-size:13px;}
+.proj-card, .informe-row{
+  display:flex; align-items:center; gap:14px; background:var(--panel); border:1px solid var(--hairline);
+  border-radius:10px; padding:14px 16px; cursor:pointer; transition:border-color .12s;
+}
+.proj-card:hover, .informe-row:hover{border-color:var(--steel);}
+.proj-card .pc-mark{
+  width:38px; height:38px; border-radius:8px; background:linear-gradient(135deg,var(--steel-dim),var(--accent));
+  flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-family:"IBM Plex Mono",monospace;
+  font-weight:700; color:#fff; font-size:14px;
+}
+.proj-card .pc-body{flex:1; min-width:0;}
+.proj-card .pc-title{font-weight:600; font-size:14.5px; color:var(--text);}
+.proj-card .pc-sub{font-size:12px; color:var(--text-dim); margin-top:2px;}
+.proj-card .pc-count{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--text-faint); flex:0 0 auto;}
+.informe-row .ir-num{font-family:"IBM Plex Mono",monospace; font-weight:700; color:var(--accent); font-size:13px; width:64px; flex:0 0 auto;}
+.informe-row .ir-body{flex:1; min-width:0;}
+.informe-row .ir-title{font-size:13.5px; color:var(--text); font-weight:500;}
+.informe-row .ir-sub{font-size:11.5px; color:var(--text-faint); margin-top:2px;}
+.estado-badge{
+  font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding:4px 9px; border-radius:20px;
+  font-family:"IBM Plex Mono",monospace; flex:0 0 auto;
+}
+.estado-badge.borrador{background:#3a424d; color:var(--text-dim);}
+.estado-badge.en_revision{background:#4a3a1f; color:#e6a25c;}
+.estado-badge.aprobado{background:#1f3a29; color:#7fc494;}
+.estado-badge.rechazado{background:#3a1f1f; color:#e08a7d;}
+
+/* navegador de proyecto/informe en el topbar del editor */
+.proj-nav{position:relative;}
+.proj-nav-btn{
+  background:var(--panel-2); border:1px solid var(--hairline); color:var(--text); border-radius:6px;
+  padding:7px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:6px;
+}
+.proj-nav-btn:hover{background:var(--panel-3);}
+.proj-nav-btn .sep{color:var(--text-faint);}
+.proj-nav-btn .chev{color:var(--text-faint); font-size:10px;}
+.proj-nav-menu{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:260px; max-height:340px; overflow-y:auto;
+  background:var(--panel-2); border:1px solid var(--hairline); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.5);
+  z-index:50; padding:6px;
+}
+.proj-nav-menu.show{display:block;}
+.proj-nav-item{
+  display:flex; align-items:center; gap:8px; padding:8px 9px; border-radius:5px; cursor:pointer; font-size:12.5px;
+}
+.proj-nav-item:hover{background:var(--panel-3);}
+.proj-nav-item.active{background:var(--panel-3); color:var(--accent);}
+.proj-nav-item .num{font-family:"IBM Plex Mono",monospace; width:52px; flex:0 0 auto; color:var(--text-faint);}
+.proj-nav-sep{border-top:1px solid var(--hairline); margin:5px 2px;}
+.proj-nav-newbtn{padding:8px 9px; font-size:12px; color:var(--steel); cursor:pointer;}
+.proj-nav-newbtn:hover{text-decoration:underline;}
+
+/* modal gestión de usuarios */
+.um-overlay{position:fixed; inset:0; background:rgba(10,12,15,.6); display:none; align-items:center; justify-content:center; z-index:210;}
+.um-overlay.show{display:flex;}
+.um-box{background:var(--panel); border:1px solid var(--hairline); border-radius:10px; padding:18px; width:360px; max-height:80vh; display:flex; flex-direction:column;}
+.um-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:14px;}
+.um-search{
+  width:100%; background:var(--panel-3); border:1px solid var(--hairline); color:var(--text);
+  padding:8px 9px; border-radius:5px; font-family:inherit; font-size:13px; margin-bottom:10px;
+}
+.um-results{display:flex; flex-direction:column; gap:6px; overflow-y:auto; max-height:180px; margin-bottom:8px;}
+.um-current-title{font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; margin:6px 0 6px;}
+.um-row{display:flex; align-items:center; gap:8px; padding:6px 7px; border-radius:6px; background:var(--panel-3);}
+.um-row .avatar-badge{width:24px; height:24px; font-size:10px;}
+.um-row .un{flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.um-row select{background:var(--panel-2); border:1px solid var(--hairline); color:var(--text); font-size:11.5px; border-radius:4px; padding:3px 4px; font-family:inherit;}
+
+/* scrollbars */
+::-webkit-scrollbar{width:10px; height:10px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--hairline); border-radius:6px;}
+::-webkit-scrollbar-thumb:hover{background:var(--panel-3);}
+
+.toast{
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--panel-3);
+  border:1px solid var(--hairline); color:var(--text); padding:10px 16px; border-radius:8px; font-size:13px;
+  z-index:100; box-shadow:0 6px 20px rgba(0,0,0,.4); display:flex; align-items:center; gap:8px;
+  opacity:0; pointer-events:none; transition:opacity .25s, transform .25s;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+.toast .dot{width:7px; height:7px; border-radius:50%; background:var(--ok);}
+.toast.err .dot{background:var(--danger);}
+
+#export-modal{
+  position:fixed; inset:0; background:rgba(10,12,15,.6); display:none; align-items:center; justify-content:center; z-index:200;
+}
+#export-modal.show{display:flex;}
+.modal-box{background:var(--panel); border:1px solid var(--hairline); border-radius:10px; padding:22px 26px; width:280px; text-align:center;}
+.modal-box .spin{
+  width:30px; height:30px; border-radius:50%; border:3px solid var(--hairline); border-top-color:var(--accent);
+  margin:0 auto 12px; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.modal-box p{margin:0; font-size:13px; color:var(--text-dim);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="screen-login">
+    <div class="login-box">
+      <div class="login-mark">JP·OBRA</div>
+      <h1>Informes de Avance de Obra</h1>
+      <p class="login-sub">Ingresa con tu correo — te enviaremos un enlace de acceso, sin contraseña.</p>
+      <div id="login-form">
+        <input type="email" id="login-email" placeholder="tu@correo.com" autocomplete="email">
+        <button class="btn btn-primary" id="btn-login" style="width:100%; justify-content:center;">Enviar enlace de acceso</button>
+      </div>
+      <div id="login-sent" style="display:none;">
+        <p class="login-sub">Revisa tu correo y haz clic en el enlace que te enviamos. Puedes cerrar esta pestaña o esperar aquí.</p>
+        <button class="btn btn-ghost" id="btn-login-otra">Usar otro correo</button>
+      </div>
+      <p id="login-error" class="login-error" style="display:none;"></p>
+    </div>
+  </div>
+
+  <div id="screen-home" style="display:none;">
+    <div class="home-header">
+      <div id="brand"><span class="mark">JP·OBRA</span><span class="name">Informes de Avance</span></div>
+      <div class="topbar-spacer"></div>
+      <div id="user-chip" class="user-chip" style="display:none;">
+        <div id="user-avatar" class="avatar-badge"></div>
+        <div><div id="user-name" class="un"></div><div id="user-role" class="ur"></div></div>
+      </div>
+      <button class="btn btn-icon" id="btn-gestion-usuarios" style="display:none;">👥 Usuarios</button>
+      <button class="btn btn-ghost" id="btn-logout" style="display:none;">Salir</button>
+    </div>
+
+    <div class="home-body">
+      <div class="home-breadcrumb" id="home-breadcrumb"></div>
+      <div class="home-toolbar">
+        <button class="btn btn-primary" id="btn-nuevo-proyecto">+ Nuevo proyecto</button>
+        <button class="btn" id="btn-nuevo-informe-ctx" style="display:none;">+ Nuevo informe</button>
+        <div class="topbar-spacer"></div>
+        <button class="btn btn-ghost" id="btn-modo-local">Continuar sin nube →</button>
+      </div>
+      <div id="home-list" class="home-list"></div>
+      <div id="home-empty" class="home-empty" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div id="um-modal" class="um-overlay">
+    <div class="um-box">
+      <div class="um-head"><b>Gestionar usuarios</b><button class="btn-ghost" id="um-close">✕</button></div>
+      <div class="hint" style="margin-bottom:10px;">Cualquiera con acceso a este enlace puede crear su cuenta pidiendo un enlace de acceso; aquí les asignas su rol.</div>
+      <div id="um-current" class="um-results"></div>
+    </div>
+  </div>
+
+  <div id="screen-editor" style="display:none;">
+  <div id="topbar">
+    <button class="btn btn-icon" id="btn-ir-home" title="Volver a proyectos">🏠</button>
+    <div class="proj-nav">
+      <button class="proj-nav-btn" id="btn-proj-nav">
+        <span id="pn-proyecto">Sin proyecto</span> <span class="sep">·</span> <span id="pn-informe">—</span> <span class="chev">▾</span>
+      </button>
+      <div class="proj-nav-menu" id="proj-nav-menu"></div>
+    </div>
+    <div id="save-status"><span class="dot"></span><span id="save-status-text">Sin cambios</span></div>
+    <div class="topbar-spacer"></div>
+    <div class="tb-group">
+      <select id="sel-fuente" class="tb-select" title="Tipografía del documento">
+        <option value="arial">Arial</option>
+        <option value="century">Century Gothic</option>
+      </select>
+      <select id="sel-fs" class="tb-select" title="Tamaño de letra (cuerpo)">
+        <option value="9">9 pt</option>
+        <option value="9.5">9,5 pt</option>
+        <option value="10">10 pt</option>
+        <option value="10.3" selected>10,3 pt</option>
+        <option value="11">11 pt</option>
+        <option value="12">12 pt</option>
+      </select>
+      <select id="sel-hoja" class="tb-select" title="Tamaño de hoja">
+        <option value="carta">Carta</option>
+        <option value="a4">A4</option>
+      </select>
+      <select id="sel-zoom" class="tb-select" title="Zoom">
+        <option value="0.45">45%</option>
+        <option value="0.6" selected>60%</option>
+        <option value="0.8">80%</option>
+        <option value="1">100%</option>
+      </select>
+    </div>
+    <div class="tb-group" id="tb-estado" style="display:none;">
+      <span class="estado-badge" id="estado-badge">Borrador</span>
+      <button class="btn btn-icon" id="btn-enviar-revision" style="display:none;">Enviar a revisión</button>
+      <button class="btn btn-icon" id="btn-aprobar" style="display:none; color:var(--ok);">✓ Aprobar</button>
+      <button class="btn btn-icon" id="btn-rechazar" style="display:none; color:var(--danger);">✕ Rechazar</button>
+    </div>
+    <div class="tb-group">
+      <button class="btn" id="btn-pdf">↓ PDF</button>
+      <button class="btn btn-primary" id="btn-word">↓ Word</button>
+    </div>
+  </div>
+
+  <div id="body-row">
+    <div id="sidebar">
+
+      <details class="section" open>
+        <summary><span class="num">01</span> Proyecto</summary>
+        <div class="section-body">
+          <div class="field"><label>Nombre del proyecto</label><input type="text" id="p-nombre" placeholder="Ej. Ampliación Clínica Mega Dental"></div>
+          <div class="field"><label>Cliente</label><input type="text" id="p-cliente"></div>
+          <div class="field"><label>Ubicación</label><input type="text" id="p-ubicacion" placeholder="Ciudad, dirección"></div>
+          <div class="row2">
+            <div class="field"><label>Contratista</label><input type="text" id="p-contratista"></div>
+            <div class="field"><label>Interventor</label><input type="text" id="p-interventor"></div>
+          </div>
+          <div class="field"><label>N.º de contrato / referencia</label><input type="text" id="p-contrato"></div>
+        </div>
+      </details>
+
+      <details class="section" open>
+        <summary><span class="num">02</span> Datos del informe</summary>
+        <div class="section-body">
+          <div class="row2">
+            <div class="field"><label>N.º de informe</label><input type="text" id="i-numero" placeholder="INF-001"></div>
+            <div class="field"><label>Fecha de emisión</label><input type="date" id="i-fecha"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Período — desde</label><input type="date" id="i-desde"></div>
+            <div class="field"><label>Período — hasta</label><input type="date" id="i-hasta"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Elaborado por</label><input type="text" id="i-elabora"></div>
+            <div class="field"><label>Cargo</label><input type="text" id="i-cargo"></div>
+          </div>
+          <div class="switch-row">
+            <span class="lbl">Calcular avance automáticamente desde el cronograma</span>
+            <label class="switch"><input type="checkbox" id="i-avance-auto"><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="field" id="avance-manual-field"><label>% de avance general — <span id="avance-val" class="data">0%</span></label>
+            <input type="range" id="i-avance" min="0" max="100" value="0" style="width:100%;">
+          </div>
+          <div class="field" id="avance-auto-field" style="display:none;">
+            <label>% de avance general (calculado) — <span id="avance-auto-val" class="data">0%</span></label>
+            <div class="hint">Se calcula como el promedio ponderado del % de avance de cada actividad del cronograma, según su peso.</div>
+          </div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary><span class="num">03</span> Cronograma de obra</summary>
+        <div class="section-body">
+          <div class="hint" style="margin-bottom:9px;">Registra las actividades con su rango de fechas, su peso dentro del proyecto (%) y su avance individual (%). El peso no tiene que sumar exactamente 100 — se normaliza automáticamente.</div>
+          <button class="btn-ai" id="btn-ai-cronograma">📷 Reconocer cronograma con IA (foto o captura)</button>
+          <input type="file" id="file-crono-img" accept="image/*" style="display:none;">
+          <button class="upload-btn" id="btn-add-actividad">+ Agregar actividad</button>
+          <div id="crono-list"></div>
+          <div class="crono-total" id="crono-total"></div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary><span class="num">04</span> Membrete (fondo de hoja)</summary>
+        <div class="section-body">
+          <div id="membrete-empty" class="dropzone">Subir imagen de membrete<br><span style="opacity:.7">Se aplica como fondo en todas las hojas — PNG o JPG, tamaño carta/A4</span></div>
+          <div id="membrete-filled" class="membrete-preview" style="display:none;">
+            <img id="membrete-thumb" alt="">
+            <div style="flex:1;">
+              <div style="font-size:12px; margin-bottom:5px;">Membrete cargado</div>
+              <button class="btn btn-icon" id="btn-quitar-membrete">Quitar</button>
+            </div>
+          </div>
+          <input type="file" id="file-membrete" accept="image/png,image/jpeg" style="display:none;">
+          <div class="hint">Ajusta los márgenes para que el contenido no se sobreponga con tu encabezado/pie impresos.</div>
+          <div class="row2" style="margin-top:8px;">
+            <div class="field"><label>Margen superior (mm)</label><input type="number" id="m-top" value="35" min="0" max="100"></div>
+            <div class="field"><label>Margen inferior (mm)</label><input type="number" id="m-bottom" value="25" min="0" max="100"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Margen izquierdo (mm)</label><input type="number" id="m-left" value="20" min="0" max="60"></div>
+            <div class="field"><label>Margen derecho (mm)</label><input type="number" id="m-right" value="20" min="0" max="60"></div>
+          </div>
+        </div>
+      </details>
+
+      <details class="section" open>
+        <summary><span class="num">05</span> Registro fotográfico</summary>
+        <div class="section-body">
+          <div class="field">
+            <label>Fotos por hoja</label>
+            <div class="chip-row" id="fotos-por-hoja">
+              <div class="chip" data-n="1">1</div>
+              <div class="chip active" data-n="2">2</div>
+              <div class="chip" data-n="4">4</div>
+              <div class="chip" data-n="6">6</div>
+            </div>
+          </div>
+          <button class="upload-btn" id="btn-add-fotos">+ Agregar fotografías</button>
+          <input type="file" id="file-fotos" accept="image/*" multiple style="display:none;">
+          <div id="foto-list"></div>
+        </div>
+      </details>
+
+      <details class="section" open>
+        <summary><span class="num">06</span> Resumen ejecutivo</summary>
+        <div class="section-body">
+          <button class="btn-ai" id="btn-ai-resumen">✨ Generar borrador con IA</button>
+          <button class="upload-btn" id="btn-plantilla-resumen">🧩 Generar por plantilla (sin IA)</button>
+          <div class="hint" style="margin-bottom:9px;">La IA redacta con lenguaje natural; la plantilla arma frases fijas con tus datos, al instante y sin costo. Luego edita libremente: agrega, quita o reordena cada punto.</div>
+          <div id="resumen-list"></div>
+          <button class="upload-btn" id="btn-add-item-resumen">+ Agregar punto</button>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary><span class="num">07</span> Observaciones y novedades</summary>
+        <div class="section-body">
+          <div class="field">
+            <textarea id="i-observaciones" spellcheck="true" lang="es" placeholder="Novedades, retrasos, hallazgos, pendientes, recomendaciones..." style="min-height:110px;"></textarea>
+          </div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary><span class="num">08</span> Firmas</summary>
+        <div class="section-body">
+          <div class="field"><label>Firma 1 — Nombre</label><input type="text" id="f1-nombre"></div>
+          <div class="field"><label>Firma 1 — Cargo</label><input type="text" id="f1-cargo" value="Responsable de Obra"></div>
+          <div class="field"><label>Firma 2 — Nombre</label><input type="text" id="f2-nombre"></div>
+          <div class="field"><label>Firma 2 — Cargo</label><input type="text" id="f2-cargo" value="Interventor / Supervisor"></div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary><span class="num">09</span> Control de versiones</summary>
+        <div class="section-body">
+          <table class="vt" id="cv-table">
+            <thead><tr><th>V.</th><th>Fecha</th><th>Autor</th><th>Cambios</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <button class="btn btn-icon" id="btn-add-version" style="margin-top:9px; width:100%; justify-content:center;">+ Nueva versión</button>
+        </div>
+      </details>
+
+    </div>
+
+    <div id="canvas-wrap">
+      <div id="canvas" class="zoom-scale"></div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="dot"></span><span id="toast-text"></span></div>
+
+<div id="export-modal"><div class="modal-box"><div class="spin"></div><p id="export-modal-text">Generando documento…</p></div></div>
+
+<script>
+/* ============================= ESTADO ============================= */
+const PAGE_MM = { carta:{w:215.9,h:279.4}, a4:{w:210,h:297} };
+const MM_PX = 3.7795275591; // 1mm en px a 96dpi
+
+const FUENTES = { arial:'Arial,Helvetica,sans-serif', century:'"Century Gothic",CenturyGothic,AppleGothic,sans-serif' };
+const ROLE_LABEL = { autor:'Autor', revisor:'Revisor', admin:'Administrador' };
+const ESTADO_LABEL = { borrador:'Borrador', en_revision:'En revisión', aprobado:'Aprobado', rechazado:'Rechazado' };
+function blankState(prevTamanoHoja, prevFuenteDoc, prevTamanoFuente){
+  return {
+    proyecto:{nombre:'',cliente:'',ubicacion:'',contratista:'',interventor:'',contrato:''},
+    informe:{numero:'',fecha:'',desde:'',hasta:'',elabora:'',cargo:'',avance:0,avanceAuto:false,observaciones:'',
+      estado:'borrador', autorId:null, autorNombre:'', comentario:''},
+    resumenItems:[],
+    cronograma:[],
+    membrete:null,
+    membreteAssetId:null,
+    membreteUrl:null,
+    margenes:{top:35,bottom:25,left:20,right:20},
+    fotosPorHoja:2,
+    tamanoHoja:prevTamanoHoja||'carta',
+    fuenteDoc:prevFuenteDoc||'arial',
+    tamanoFuente:prevTamanoFuente||10.3,
+    fotos:[],
+    firmas:[{nombre:'',cargo:'Responsable de Obra'},{nombre:'',cargo:'Interventor / Supervisor'}],
+    versiones:[]
+  };
+}
+let state = blankState();
+let nextFotoId = 1;
+let nextActividadId = 1;
+function resetStateToDefaults(){
+  state = blankState(state.tamanoHoja, state.fuenteDoc, state.tamanoFuente);
+  nextFotoId = 1; nextActividadId = 1;
+}
+function fotoSrc(f){ return (f && (f.src || f.url)) || ''; }
+async function imageBytes(srcOrUrl){
+  if(!srcOrUrl) return null;
+  try{
+    if(srcOrUrl.startsWith('data:')) return dataURLToUint8(srcOrUrl);
+    const resp = await fetch(srcOrUrl);
+    const buf = await resp.arrayBuffer();
+    return new Uint8Array(buf);
+  }catch(e){ return null; }
+}
+
+/* ============================= SUPABASE: CONFIGURACIÓN Y SESIÓN ============================= */
+const SUPABASE_URL = 'https://hlrihncpocgmnxudxfjz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscmlobmNwb2NnbW54dWR4Zmp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwODc1MjIsImV4cCI6MjEwNTY2MzUyMn0.iTOVtzWR6hy-etsx-1ER0HqL1YXDNly4m9yWEXqVW_U';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const MEDIA_BUCKET = 'informes-media';
+
+let session = {
+  userId:null, userName:'', email:'', role:'autor', cloudOn:false,
+  homeView:'proyectos', proyectoActual:null, informeActual:null, informesCacheActual:[]
+};
+function initials(name){
+  const parts = (name||'').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length) return '?';
+  return (parts[0][0] + (parts[1]?parts[1][0]:'')).toUpperCase();
+}
+function avatarColor(id){
+  const colors = ['#c9772a','#3d5a73','#5a8f6b','#b1493f','#6f93ad','#8a6fae'];
+  let h=0; for(const c of (id||'')) h=(h*31+c.charCodeAt(0))>>>0;
+  return colors[h%colors.length];
+}
+function paintAvatar(el, name, id){
+  el.textContent = initials(name);
+  el.style.background = avatarColor(id||name||'');
+}
+async function initSession(){
+  const { data:{ session: sbSession } } = await supabase.auth.getSession();
+  if(sbSession && sbSession.user){ await onAuthed(sbSession.user); } else { showLoginScreen(); }
+  supabase.auth.onAuthStateChange((event, sbSession)=>{
+    if(event==='SIGNED_IN' && sbSession && sbSession.user && session.userId !== sbSession.user.id){
+      onAuthed(sbSession.user);
+    }else if(event==='SIGNED_OUT'){
+      location.reload();
+    }
+  });
+}
+function showLoginScreen(){
+  document.getElementById('screen-login').style.display='flex';
+  document.getElementById('screen-home').style.display='none';
+  document.getElementById('screen-editor').style.display='none';
+}
+async function onAuthed(user){
+  session.userId = user.id;
+  session.email = user.email || '';
+  session.userName = (user.user_metadata && user.user_metadata.nombre) || user.email || 'Sin nombre';
+  session.cloudOn = true;
+  await resolveRole();
+  renderUserChip();
+  document.getElementById('screen-login').style.display='none';
+  document.getElementById('screen-home').style.display='flex';
+  await showHomeProyectos();
+}
+async function resolveRole(){
+  try{
+    const { data, error } = await supabase.from('profiles').select('rol, nombre').eq('id', session.userId).single();
+    if(error) throw error;
+    if(data){ session.role = data.rol || 'autor'; if(data.nombre) session.userName = data.nombre; }
+  }catch(e){ session.role='autor'; }
+}
+function fmtFechaHora(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  if(isNaN(d)) return '—';
+  return d.toLocaleDateString('es-CO')+' '+d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+}
+function renderUserChip(){
+  const chip = document.getElementById('user-chip');
+  const btnUm = document.getElementById('btn-gestion-usuarios');
+  const btnLogout = document.getElementById('btn-logout');
+  if(!session.cloudOn){ chip.style.display='none'; btnUm.style.display='none'; btnLogout.style.display='none'; return; }
+  chip.style.display='flex'; btnLogout.style.display='inline-flex';
+  paintAvatar(document.getElementById('user-avatar'), session.userName, session.userId);
+  document.getElementById('user-name').textContent = session.userName || 'Sin nombre';
+  document.getElementById('user-role').textContent = ROLE_LABEL[session.role] || session.role;
+  btnUm.style.display = session.role==='admin' ? 'inline-flex' : 'none';
+}
+document.getElementById('btn-login').addEventListener('click', async ()=>{
+  const email = document.getElementById('login-email').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.style.display='none';
+  if(!email){ errEl.textContent='Escribe tu correo.'; errEl.style.display='block'; return; }
+  const btn = document.getElementById('btn-login');
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    const { error } = await supabase.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin + window.location.pathname } });
+    if(error) throw error;
+    document.getElementById('login-form').style.display='none';
+    document.getElementById('login-sent').style.display='block';
+  }catch(e){
+    errEl.textContent = 'No se pudo enviar el enlace: '+(e.message||'error desconocido');
+    errEl.style.display='block';
+  }finally{
+    btn.disabled=false; btn.textContent='Enviar enlace de acceso';
+  }
+});
+document.getElementById('btn-login-otra').addEventListener('click', ()=>{
+  document.getElementById('login-sent').style.display='none';
+  document.getElementById('login-form').style.display='block';
+  document.getElementById('login-email').value='';
+});
+document.getElementById('btn-logout').addEventListener('click', async ()=>{ await supabase.auth.signOut(); });
+
+/* ============================= INDEXEDDB ============================= */
+let dbPromise = new Promise((resolve,reject)=>{
+  const req = indexedDB.open('obra-informes-db',1);
+  req.onupgradeneeded = ()=>{ req.result.createObjectStore('drafts'); };
+  req.onsuccess = ()=>resolve(req.result);
+  req.onerror = ()=>reject(req.error);
+});
+async function dbSave(key,value){
+  const db = await dbPromise;
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('drafts','readwrite');
+    tx.objectStore('drafts').put(value,key);
+    tx.oncomplete = ()=>res(true);
+    tx.onerror = ()=>rej(tx.error);
+  });
+}
+async function dbLoad(key){
+  const db = await dbPromise;
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('drafts','readonly');
+    const r = tx.objectStore('drafts').get(key);
+    r.onsuccess = ()=>res(r.result);
+    r.onerror = ()=>rej(r.error);
+  });
+}
+
+/* ============================= AUTOGUARDADO ============================= */
+let saveTimer = null;
+const statusEl = document.getElementById('save-status');
+const statusText = document.getElementById('save-status-text');
+function scheduleSave(){
+  statusEl.className=''; statusText.textContent='Editando…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 800);
+}
+async function doSave(){
+  statusEl.className='saving'; statusText.textContent='Guardando…';
+  try{
+    await dbSave(localDraftKey(), JSON.parse(JSON.stringify(state)));
+    if(session.informeActual) await syncCloudNow();
+    statusEl.className='saved';
+    const t = new Date();
+    const prefijo = session.informeActual ? 'Guardado en la nube · ' : 'Guardado · ';
+    statusText.textContent = prefijo + t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+  }catch(e){
+    statusEl.className=''; statusText.textContent='Error al guardar';
+    showToast('No se pudo guardar localmente: '+e.message, true);
+  }
+}
+async function loadDraft(){
+  try{
+    const saved = await dbLoad('current');
+    if(saved){
+      state = Object.assign(state, saved);
+      // migración: informes antiguos guardaban el resumen como texto único
+      if(state.informe && typeof state.informe.resumen === 'string' && state.informe.resumen.trim() && (!state.resumenItems || !state.resumenItems.length)){
+        state.resumenItems = [state.informe.resumen.trim()];
+      }
+      delete state.informe.resumen;
+      if(!Array.isArray(state.resumenItems)) state.resumenItems = [];
+      if(!Array.isArray(state.cronograma)) state.cronograma = [];
+      nextFotoId = (state.fotos.reduce((m,f)=>Math.max(m,f.id||0),0))+1;
+      nextActividadId = (state.cronograma.reduce((m,a)=>Math.max(m,a.id||0),0))+1;
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
+/* ============================= TOAST ============================= */
+let toastTimer=null;
+function showToast(msg, isErr){
+  const el = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = msg;
+  el.className = 'toast show' + (isErr?' err':'');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.className='toast', 2600);
+}
+
+/* ============================= UTILIDADES ============================= */
+function compressImage(file, maxW=1500, quality=0.82){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = e=>{ img.onload = ()=>{
+      let w = img.width, h = img.height;
+      if(w > maxW){ h = Math.round(h * (maxW/w)); w = maxW; }
+      const c = document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    }; img.onerror = reject; img.src = e.target.result; };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function dataURLToUint8(dataUrl){
+  const base64 = dataUrl.split(',')[1];
+  const bin = atob(base64);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return arr;
+}
+function fmtFecha(iso){
+  if(!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+/* ============================= PANTALLA DE INICIO: PROYECTOS E INFORMES ============================= */
+function proyectoFromRow(r){
+  return { id:r.id, nombre:r.nombre, cliente:r.cliente, ubicacion:r.ubicacion, contratista:r.contratista,
+    interventor:r.interventor, contrato:r.contrato, creadoPor:r.creado_por, actualizadoEn:r.updated_at, creadoEn:r.created_at };
+}
+function informeFromRow(r){
+  return { id:r.id, proyectoId:r.proyecto_id, numero:r.numero, fechaEmision:r.fecha_emision, estado:r.estado,
+    autorId:r.autor_id, autorNombre:r.autor_nombre, comentario:r.comentario, data:r.data,
+    creadoEn:r.created_at, actualizadoEn:r.updated_at };
+}
+async function cargarProyectos(){
+  if(!session.cloudOn) return [];
+  try{
+    const { data, error } = await supabase.from('proyectos').select('*').order('updated_at', { ascending:false }).limit(200);
+    if(error) throw error;
+    return data.map(proyectoFromRow);
+  }catch(e){ return []; }
+}
+async function cargarInformes(proyectoId){
+  if(!session.cloudOn) return [];
+  try{
+    const { data, error } = await supabase.from('informes').select('*').eq('proyecto_id', proyectoId).order('created_at', { ascending:false }).limit(200);
+    if(error) throw error;
+    return data.map(informeFromRow);
+  }catch(e){ return []; }
+}
+function renderBreadcrumb(){
+  const el = document.getElementById('home-breadcrumb');
+  if(session.homeView==='proyectos'){
+    el.textContent = 'Todos los proyectos';
+  }else{
+    el.innerHTML = '';
+    const a = document.createElement('a'); a.textContent='Proyectos'; a.addEventListener('click', showHomeProyectos);
+    el.appendChild(a);
+    el.appendChild(document.createTextNode(' › '));
+    const span = document.createElement('span'); span.textContent = session.proyectoActual.nombre || 'Proyecto';
+    el.appendChild(span);
+  }
+}
+async function showHomeProyectos(){
+  session.homeView='proyectos'; session.proyectoActual=null;
+  renderBreadcrumb();
+  document.getElementById('btn-nuevo-informe-ctx').style.display='none';
+  const list = document.getElementById('home-list'), empty = document.getElementById('home-empty');
+  list.innerHTML=''; empty.style.display='none';
+  if(!session.cloudOn){
+    empty.style.display='block';
+    empty.innerHTML = 'Inicia sesión para ver tus proyectos.';
+    return;
+  }
+  list.innerHTML = '<div style="color:var(--text-faint); font-size:12.5px;">Cargando proyectos…</div>';
+  const proyectos = await cargarProyectos();
+  list.innerHTML='';
+  if(!proyectos.length){
+    empty.style.display='block';
+    empty.innerHTML = 'Aún no hay proyectos registrados.<br>Crea el primero con «+ Nuevo proyecto».';
+    return;
+  }
+  proyectos.forEach(p=>{
+    const el = document.createElement('div'); el.className='proj-card';
+    el.innerHTML = `<div class="pc-mark">${esc((p.nombre||'P').slice(0,1).toUpperCase())}</div>
+      <div class="pc-body"><div class="pc-title">${esc(p.nombre)||'Proyecto sin nombre'}</div>
+      <div class="pc-sub">${esc(p.cliente)||'Sin cliente'}${p.ubicacion? ' · '+esc(p.ubicacion):''}</div></div>
+      <div class="pc-count">›</div>`;
+    el.addEventListener('click', ()=>showHomeInformes(p));
+    list.appendChild(el);
+  });
+}
+async function showHomeInformes(proyecto){
+  session.homeView='informes'; session.proyectoActual=proyecto;
+  renderBreadcrumb();
+  document.getElementById('btn-nuevo-informe-ctx').style.display='inline-flex';
+  const list = document.getElementById('home-list'), empty = document.getElementById('home-empty');
+  list.innerHTML = '<div style="color:var(--text-faint); font-size:12.5px;">Cargando informes…</div>'; empty.style.display='none';
+  const informes = await cargarInformes(proyecto.id);
+  session.informesCacheActual = informes;
+  list.innerHTML='';
+  if(!informes.length){
+    empty.style.display='block';
+    empty.innerHTML = 'Este proyecto todavía no tiene informes.<br>Crea el primero con «+ Nuevo informe».';
+    return;
+  }
+  informes.forEach(inf=>{
+    const el = document.createElement('div'); el.className='informe-row';
+    el.innerHTML = `<div class="ir-num">${esc(inf.numero)||'—'}</div>
+      <div class="ir-body"><div class="ir-title">${fmtFecha(inf.fechaEmision)} — ${esc(inf.autorNombre)||'—'}</div>
+      <div class="ir-sub">Actualizado ${fmtFechaHora(inf.actualizadoEn)}</div></div>
+      <span class="estado-badge ${inf.estado||'borrador'}">${ESTADO_LABEL[inf.estado]||'Borrador'}</span>`;
+    el.addEventListener('click', ()=>abrirInformeCloud(proyecto, inf));
+    list.appendChild(el);
+  });
+}
+document.getElementById('btn-nuevo-proyecto').addEventListener('click', async ()=>{
+  if(!session.cloudOn){ showToast('Inicia sesión primero.', true); return; }
+  const nombre = prompt('Nombre del nuevo proyecto:');
+  if(!nombre || !nombre.trim()) return;
+  try{
+    const { data, error } = await supabase.from('proyectos').insert({
+      nombre: nombre.trim(), creado_por: session.userId
+    }).select().single();
+    if(error) throw error;
+    await crearInformeParaProyecto(proyectoFromRow(data));
+  }catch(e){ showToast('No se pudo crear el proyecto: '+(e&&e.message||''), true); }
+});
+document.getElementById('btn-nuevo-informe-ctx').addEventListener('click', ()=>{
+  if(session.proyectoActual) crearInformeParaProyecto(session.proyectoActual);
+});
+async function crearInformeParaProyecto(proyecto){
+  try{
+    const numero = 'INF-'+String((session.informesCacheActual?session.informesCacheActual.length:0)+1).padStart(3,'0');
+    const { data, error } = await supabase.from('informes').insert({
+      proyecto_id: proyecto.id, numero, fecha_emision: new Date().toISOString().slice(0,10),
+      estado:'borrador', autor_id: session.userId, autor_nombre: session.userName, comentario:'', data:null
+    }).select().single();
+    if(error) throw error;
+    await abrirInformeCloud(proyecto, informeFromRow(data));
+  }catch(e){ showToast('No se pudo crear el informe: '+(e&&e.message||''), true); }
+}
+async function abrirInformeCloud(proyecto, informeDoc){
+  session.proyectoActual = proyecto; session.informeActual = informeDoc;
+  resetStateToDefaults();
+  if(informeDoc.data) applyCloudData(informeDoc.data);
+  state.informe.numero = informeDoc.numero || state.informe.numero;
+  state.informe.fecha = state.informe.fecha || informeDoc.fechaEmision;
+  state.informe.estado = informeDoc.estado || 'borrador';
+  state.informe.autorId = informeDoc.autorId;
+  state.informe.autorNombre = informeDoc.autorNombre;
+  state.informe.comentario = informeDoc.comentario || '';
+  if(!state.proyecto.nombre) state.proyecto = Object.assign(state.proyecto, {
+    nombre:proyecto.nombre, cliente:proyecto.cliente, ubicacion:proyecto.ubicacion,
+    contratista:proyecto.contratista, interventor:proyecto.interventor, contrato:proyecto.contrato
+  });
+  enterEditor();
+}
+function applyCloudData(data){
+  state.proyecto = Object.assign(state.proyecto, data.proyecto||{});
+  state.informe = Object.assign(state.informe, data.informe||{});
+  state.resumenItems = data.resumenItems||[];
+  state.cronograma = data.cronograma||[];
+  state.margenes = data.margenes||state.margenes;
+  state.fotosPorHoja = data.fotosPorHoja||state.fotosPorHoja;
+  state.tamanoHoja = data.tamanoHoja||state.tamanoHoja;
+  state.fuenteDoc = data.fuenteDoc||state.fuenteDoc;
+  state.tamanoFuente = data.tamanoFuente||state.tamanoFuente;
+  state.firmas = data.firmas||state.firmas;
+  state.versiones = data.versiones||state.versiones;
+  state.membreteAssetId = data.membreteAssetId||null;
+  state.membreteUrl = data.membreteUrl||null;
+  state.membrete = data.membreteUrl || null;
+  state.fotos = (data.fotos||[]).map(f=>({id:f.id, desc:f.desc||'', ubicacion:f.ubicacion||'', fecha:f.fecha||'', assetId:f.assetId||null, url:f.url||null}));
+  nextFotoId = (state.fotos.reduce((m,f)=>Math.max(m,f.id||0),0))+1;
+  nextActividadId = (state.cronograma.reduce((m,a)=>Math.max(m,a.id||0),0))+1;
+}
+function cloudPayloadFromState(){
+  return {
+    proyecto: state.proyecto,
+    informe: { numero:state.informe.numero, fecha:state.informe.fecha, desde:state.informe.desde, hasta:state.informe.hasta,
+      elabora:state.informe.elabora, cargo:state.informe.cargo, avance:state.informe.avance, avanceAuto:state.informe.avanceAuto,
+      observaciones:state.informe.observaciones, estado:state.informe.estado, autorId:state.informe.autorId,
+      autorNombre:state.informe.autorNombre, comentario:state.informe.comentario },
+    resumenItems: state.resumenItems,
+    cronograma: state.cronograma,
+    fotos: state.fotos.map(f=>({id:f.id, desc:f.desc, ubicacion:f.ubicacion, fecha:f.fecha, assetId:f.assetId||null, url:f.url||null})),
+    membreteAssetId: state.membreteAssetId||null,
+    membreteUrl: state.membreteUrl||null,
+    margenes: state.margenes, fotosPorHoja: state.fotosPorHoja, tamanoHoja: state.tamanoHoja,
+    fuenteDoc: state.fuenteDoc, tamanoFuente: state.tamanoFuente, firmas: state.firmas, versiones: state.versiones
+  };
+}
+async function syncCloudNow(){
+  if(!session.informeActual) return;
+  try{
+    const payload = cloudPayloadFromState();
+    const { error: e1 } = await supabase.from('informes').update({
+      data: payload, numero: state.informe.numero||session.informeActual.numero,
+      fecha_emision: state.informe.fecha||session.informeActual.fechaEmision,
+      estado: state.informe.estado||'borrador', comentario: state.informe.comentario||''
+    }).eq('id', session.informeActual.id);
+    if(e1) throw e1;
+    session.informeActual.estado = state.informe.estado; session.informeActual.numero = state.informe.numero;
+    if(session.proyectoActual){
+      const { error: e2 } = await supabase.from('proyectos').update({
+        nombre: state.proyecto.nombre||session.proyectoActual.nombre, cliente: state.proyecto.cliente,
+        ubicacion: state.proyecto.ubicacion, contratista: state.proyecto.contratista,
+        interventor: state.proyecto.interventor, contrato: state.proyecto.contrato
+      }).eq('id', session.proyectoActual.id);
+      if(e2) throw e2;
+      session.proyectoActual.nombre = state.proyecto.nombre;
+    }
+  }catch(e){
+    showToast('No se pudo sincronizar con la nube: '+((e&&e.message)||''), true);
+  }
+}
+document.getElementById('btn-modo-local').addEventListener('click', async ()=>{
+  session.proyectoActual=null; session.informeActual=null;
+  resetStateToDefaults();
+  await loadDraft();
+  enterEditor();
+});
+function localDraftKey(){ return session.informeActual ? ('cloud:'+session.informeActual.id) : 'current'; }
+
+
+/* ---- navegador de informes del proyecto (topbar del editor) ---- */
+function updateProjNavLabel(){
+  const wrap = document.querySelector('.proj-nav');
+  if(session.informeActual){
+    wrap.style.display='inline-flex';
+    document.getElementById('pn-proyecto').textContent = session.proyectoActual.nombre || 'Proyecto';
+    document.getElementById('pn-informe').textContent = 'Informe '+(state.informe.numero||'—');
+  }else{
+    wrap.style.display='none';
+  }
+}
+document.getElementById('btn-proj-nav').addEventListener('click', async ()=>{
+  const menu = document.getElementById('proj-nav-menu');
+  const showing = menu.classList.contains('show');
+  menu.classList.remove('show');
+  if(showing || !session.proyectoActual) return;
+  menu.innerHTML = '<div style="padding:8px; font-size:12px; color:var(--text-faint);">Cargando…</div>';
+  menu.classList.add('show');
+  const informes = await cargarInformes(session.proyectoActual.id);
+  menu.innerHTML = informes.map(inf=>`
+    <div class="proj-nav-item ${session.informeActual && inf.id===session.informeActual.id?'active':''}" data-id="${esc(inf.id)}">
+      <span class="num">${esc(inf.numero)||'—'}</span><span style="flex:1;">${fmtFecha(inf.fechaEmision)}</span>
+      <span class="estado-badge ${inf.estado||'borrador'}" style="font-size:9px; padding:2px 6px;">${ESTADO_LABEL[inf.estado]||'Borrador'}</span>
+    </div>`).join('') + `<div class="proj-nav-sep"></div><div class="proj-nav-newbtn" id="pnm-nuevo">+ Nuevo informe</div>`;
+  menu.querySelectorAll('.proj-nav-item').forEach((it,idx)=>{
+    it.addEventListener('click', ()=>{ menu.classList.remove('show'); abrirInformeCloud(session.proyectoActual, informes[idx]); });
+  });
+  const nuevoBtn = document.getElementById('pnm-nuevo');
+  if(nuevoBtn) nuevoBtn.addEventListener('click', ()=>{ menu.classList.remove('show'); crearInformeParaProyecto(session.proyectoActual); });
+});
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.proj-nav')) document.querySelectorAll('.proj-nav-menu').forEach(m=>m.classList.remove('show'));
+});
+document.getElementById('btn-ir-home').addEventListener('click', ()=>{
+  document.getElementById('screen-editor').style.display='none';
+  document.getElementById('screen-home').style.display='flex';
+  if(session.homeView==='informes' && session.proyectoActual) showHomeInformes(session.proyectoActual);
+  else showHomeProyectos();
+});
+
+/* ---- flujo de verificación (Autor / Revisor / Admin) ---- */
+function updateEstadoUI(){
+  const tb = document.getElementById('tb-estado');
+  if(!session.informeActual){ tb.style.display='none'; return; }
+  tb.style.display='flex';
+  const estado = state.informe.estado || 'borrador';
+  const badge = document.getElementById('estado-badge');
+  badge.textContent = ESTADO_LABEL[estado] || 'Borrador';
+  badge.className = 'estado-badge '+estado;
+  const soyAutor = state.informe.autorId === session.userId;
+  const puedoRevisar = session.role==='revisor' || session.role==='admin';
+  document.getElementById('btn-enviar-revision').style.display = (soyAutor && (estado==='borrador'||estado==='rechazado')) ? 'inline-flex':'none';
+  document.getElementById('btn-aprobar').style.display = (puedoRevisar && estado==='en_revision') ? 'inline-flex':'none';
+  document.getElementById('btn-rechazar').style.display = (puedoRevisar && estado==='en_revision') ? 'inline-flex':'none';
+}
+document.getElementById('btn-enviar-revision').addEventListener('click', async ()=>{
+  state.informe.estado='en_revision'; state.informe.comentario='';
+  updateEstadoUI(); await syncCloudNow(); showToast('Informe enviado a revisión');
+});
+document.getElementById('btn-aprobar').addEventListener('click', async ()=>{
+  state.informe.estado='aprobado'; state.informe.comentario='';
+  updateEstadoUI(); await syncCloudNow(); showToast('Informe aprobado');
+});
+document.getElementById('btn-rechazar').addEventListener('click', async ()=>{
+  const comentario = prompt('Motivo del rechazo (lo verá el autor):');
+  if(comentario===null) return;
+  state.informe.estado='rechazado'; state.informe.comentario=comentario||'Sin comentarios';
+  updateEstadoUI(); await syncCloudNow(); showToast('Informe rechazado');
+});
+
+/* ---- gestión de usuarios (solo Admin) ---- */
+document.getElementById('btn-gestion-usuarios').addEventListener('click', async ()=>{
+  document.getElementById('um-modal').classList.add('show');
+  await renderUMCurrent();
+});
+document.getElementById('um-close').addEventListener('click', ()=>document.getElementById('um-modal').classList.remove('show'));
+async function renderUMCurrent(){
+  const wrap = document.getElementById('um-current');
+  wrap.innerHTML = '<div style="font-size:11.5px; color:var(--text-faint);">Cargando…</div>';
+  try{
+    const { data, error } = await supabase.from('profiles').select('id, nombre, email, rol').order('created_at', { ascending:true });
+    if(error) throw error;
+    wrap.innerHTML='';
+    data.forEach(u=>{
+      const row = document.createElement('div'); row.className='um-row';
+      const badge = document.createElement('div'); badge.className='avatar-badge'; paintAvatar(badge, u.nombre||u.email, u.id); row.appendChild(badge);
+      const nm = document.createElement('div'); nm.className='un'; nm.textContent = u.nombre || u.email || 'Usuario'; row.appendChild(nm);
+      const sel = document.createElement('select');
+      ['autor','revisor','admin'].forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=ROLE_LABEL[r]; sel.appendChild(o); });
+      sel.value = u.rol||'autor';
+      sel.addEventListener('change', async ()=>{
+        try{
+          const { error: e2 } = await supabase.from('profiles').update({ rol: sel.value }).eq('id', u.id);
+          if(e2) throw e2;
+          showToast('Rol actualizado');
+          if(u.id===session.userId){ session.role = sel.value; renderUserChip(); }
+        }catch(e){ showToast('No se pudo actualizar el rol: '+(e&&e.message||''), true); sel.value=u.rol||'autor'; }
+      });
+      row.appendChild(sel);
+      wrap.appendChild(row);
+    });
+    if(!data.length) wrap.innerHTML = '<div style="font-size:11.5px; color:var(--text-faint);">Aún no hay usuarios registrados.</div>';
+  }catch(e){ wrap.innerHTML = '<div style="font-size:11.5px; color:var(--danger);">No se pudo cargar la lista.</div>'; }
+}
+
+/* ---- entrar / salir del editor ---- */
+function enterEditor(){
+  document.getElementById('screen-home').style.display='none';
+  document.getElementById('screen-editor').style.display='block';
+  hydrateForm();
+  document.getElementById('canvas').style.transform = 'scale('+document.getElementById('sel-zoom').value+')';
+  render(document.getElementById('canvas'));
+  updateProjNavLabel();
+  updateEstadoUI();
+  statusEl.className=''; statusText.textContent = session.informeActual ? 'Sin cambios' : 'Borrador local';
+}
+
+/* ============================= BINDINGS DE FORMULARIO ============================= */
+function bindText(id, path){
+  const el = document.getElementById(id);
+  el.addEventListener('input', ()=>{
+    setPath(path, el.value);
+    scheduleRender(); scheduleSave();
+  });
+}
+function setPath(path, value){
+  const parts = path.split('.');
+  let o = state;
+  for(let i=0;i<parts.length-1;i++) o = o[parts[i]];
+  o[parts[parts.length-1]] = value;
+}
+function getPath(path){
+  return path.split('.').reduce((o,k)=>o[k], state);
+}
+function hydrateForm(){
+  document.getElementById('p-nombre').value = state.proyecto.nombre;
+  document.getElementById('p-cliente').value = state.proyecto.cliente;
+  document.getElementById('p-ubicacion').value = state.proyecto.ubicacion;
+  document.getElementById('p-contratista').value = state.proyecto.contratista;
+  document.getElementById('p-interventor').value = state.proyecto.interventor;
+  document.getElementById('p-contrato').value = state.proyecto.contrato;
+  document.getElementById('i-numero').value = state.informe.numero;
+  document.getElementById('i-fecha').value = state.informe.fecha;
+  document.getElementById('i-desde').value = state.informe.desde;
+  document.getElementById('i-hasta').value = state.informe.hasta;
+  document.getElementById('i-elabora').value = state.informe.elabora;
+  document.getElementById('i-cargo').value = state.informe.cargo;
+  document.getElementById('i-avance').value = state.informe.avance;
+  document.getElementById('avance-val').textContent = state.informe.avance+'%';
+  document.getElementById('i-avance-auto').checked = !!state.informe.avanceAuto;
+  document.getElementById('i-observaciones').value = state.informe.observaciones;
+  document.getElementById('sel-fuente').value = state.fuenteDoc;
+  document.getElementById('sel-fs').value = state.tamanoFuente;
+  applyDocFont();
+  toggleAvanceAuto(false);
+  document.getElementById('f1-nombre').value = state.firmas[0].nombre;
+  document.getElementById('f1-cargo').value = state.firmas[0].cargo;
+  document.getElementById('f2-nombre').value = state.firmas[1].nombre;
+  document.getElementById('f2-cargo').value = state.firmas[1].cargo;
+  document.getElementById('m-top').value = state.margenes.top;
+  document.getElementById('m-bottom').value = state.margenes.bottom;
+  document.getElementById('m-left').value = state.margenes.left;
+  document.getElementById('m-right').value = state.margenes.right;
+  document.getElementById('sel-hoja').value = state.tamanoHoja;
+  document.querySelectorAll('#fotos-por-hoja .chip').forEach(c=>{
+    c.classList.toggle('active', Number(c.dataset.n)===state.fotosPorHoja);
+  });
+  renderMembretePreview();
+  renderFotoList();
+  renderVersionTable();
+  renderResumenList();
+  renderCronoList();
+}
+function applyDocFont(){
+  document.documentElement.style.setProperty('--doc-font-family', FUENTES[state.fuenteDoc] || FUENTES.arial);
+  document.documentElement.style.setProperty('--doc-fs', state.tamanoFuente + 'pt');
+}
+['p-nombre','p-cliente','p-ubicacion','p-contratista','p-interventor','p-contrato'].forEach(id=>{
+  bindText(id, 'proyecto.'+id.slice(2));
+});
+['i-numero','i-fecha','i-desde','i-hasta','i-elabora','i-cargo'].forEach(id=>{
+  bindText(id, 'informe.'+id.slice(2));
+});
+document.getElementById('i-avance').addEventListener('input', e=>{
+  state.informe.avance = Number(e.target.value);
+  document.getElementById('avance-val').textContent = state.informe.avance+'%';
+  scheduleRender(); scheduleSave();
+});
+document.getElementById('i-avance-auto').addEventListener('change', e=>{
+  state.informe.avanceAuto = e.target.checked;
+  toggleAvanceAuto(true);
+  scheduleRender(); scheduleSave();
+});
+function toggleAvanceAuto(recalc){
+  const auto = !!state.informe.avanceAuto;
+  document.getElementById('avance-manual-field').style.display = auto? 'none':'block';
+  document.getElementById('avance-auto-field').style.display = auto? 'block':'none';
+  if(auto){
+    const val = computeAvanceFromCronograma();
+    document.getElementById('avance-auto-val').textContent = val+'%';
+    if(recalc){ state.informe.avance = val; }
+  }
+}
+function computeAvanceFromCronograma(){
+  const acts = state.cronograma.filter(a=>a.peso>0);
+  if(!acts.length) return 0;
+  const totalPeso = acts.reduce((s,a)=>s+Number(a.peso||0),0);
+  if(totalPeso<=0) return 0;
+  const ponderado = acts.reduce((s,a)=>s+Number(a.peso||0)*Number(a.avance||0),0);
+  return Math.round(ponderado/totalPeso);
+}
+document.getElementById('i-observaciones').addEventListener('input', e=>{ state.informe.observaciones = e.target.value; scheduleRender(); scheduleSave(); });
+document.getElementById('sel-fuente').addEventListener('change', e=>{
+  state.fuenteDoc = e.target.value; applyDocFont(); scheduleRender(); scheduleSave();
+});
+document.getElementById('sel-fs').addEventListener('change', e=>{
+  state.tamanoFuente = Number(e.target.value); applyDocFont(); scheduleRender(); scheduleSave();
+});
+document.getElementById('f1-nombre').addEventListener('input', e=>{ state.firmas[0].nombre=e.target.value; scheduleRender(); scheduleSave(); });
+document.getElementById('f1-cargo').addEventListener('input', e=>{ state.firmas[0].cargo=e.target.value; scheduleRender(); scheduleSave(); });
+document.getElementById('f2-nombre').addEventListener('input', e=>{ state.firmas[1].nombre=e.target.value; scheduleRender(); scheduleSave(); });
+document.getElementById('f2-cargo').addEventListener('input', e=>{ state.firmas[1].cargo=e.target.value; scheduleRender(); scheduleSave(); });
+['top','bottom','left','right'].forEach(k=>{
+  document.getElementById('m-'+k).addEventListener('input', e=>{
+    state.margenes[k] = Number(e.target.value)||0; scheduleRender(); scheduleSave();
+  });
+});
+document.getElementById('sel-hoja').addEventListener('change', e=>{
+  state.tamanoHoja = e.target.value; scheduleRender(); scheduleSave();
+});
+document.getElementById('sel-zoom').addEventListener('change', e=>{
+  document.getElementById('canvas').style.transform = 'scale('+e.target.value+')';
+  applyZoomSpacing(Number(e.target.value));
+});
+function applyZoomSpacing(z){
+  // corrige el hueco que deja el transform:scale para que el scroll tenga la altura correcta
+  const canvas = document.getElementById('canvas');
+  const h = canvas.getBoundingClientRect().height / (parseFloat(getComputedStyle(canvas).transform.split(',')[3])||1);
+}
+document.querySelectorAll('#fotos-por-hoja .chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    state.fotosPorHoja = Number(chip.dataset.n);
+    document.querySelectorAll('#fotos-por-hoja .chip').forEach(c=>c.classList.toggle('active', c===chip));
+    scheduleRender(); scheduleSave();
+  });
+});
+
+/* ---- membrete ---- */
+document.getElementById('membrete-empty').addEventListener('click', ()=>document.getElementById('file-membrete').click());
+async function subirAStorage(blob, ext){
+  const path = session.userId+'/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+ext;
+  const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(path, blob, { contentType: blob.type||'image/jpeg' });
+  if(error) throw error;
+  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+  return { path, url: data.publicUrl };
+}
+
+/* ---- IA (vía función Edge ai-informes en Supabase) ---- */
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=> resolve(String(r.result).split(',')[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+function parseJSONLoose(text){
+  if(!text) throw new Error('Respuesta vacía de la IA.');
+  try{ return JSON.parse(text); }catch(e){}
+  const s1=text.indexOf('{'), e1=text.lastIndexOf('}');
+  if(s1>=0 && e1>s1){ try{ return JSON.parse(text.slice(s1,e1+1)); }catch(e){} }
+  const s2=text.indexOf('['), e2=text.lastIndexOf(']');
+  if(s2>=0 && e2>s2){ try{ return JSON.parse(text.slice(s2,e2+1)); }catch(e){} }
+  throw new Error('La IA no devolvió un JSON válido.');
+}
+async function llamarIA(tipo, extra){
+  const { data, error } = await supabase.functions.invoke('ai-informes', { body: Object.assign({tipo}, extra) });
+  if(error){
+    let detail = error.message || 'error desconocido';
+    try{ if(error.context && error.context.json){ const j = await error.context.json(); if(j && j.message) detail = j.message; } }catch(e){}
+    throw new Error(detail);
+  }
+  if(data && data.error) throw new Error(data.message || data.error);
+  return data.text;
+}
+document.getElementById('file-membrete').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const dataUrl = await compressImage(file, 2000, 0.9);
+  state.membrete = dataUrl; state.membreteAssetId = null; state.membreteUrl = null;
+  if(session.informeActual){
+    try{
+      const blob = await (await fetch(dataUrl)).blob();
+      const res = await subirAStorage(blob, 'jpg');
+      state.membreteAssetId = res.path; state.membreteUrl = res.url;
+    }catch(err){ /* queda como imagen local; se reintentará en el próximo guardado */ }
+  }
+  renderMembretePreview(); scheduleRender(); scheduleSave();
+});
+document.getElementById('btn-quitar-membrete').addEventListener('click', ()=>{
+  state.membrete = null; state.membreteAssetId = null; state.membreteUrl = null;
+  renderMembretePreview(); scheduleRender(); scheduleSave();
+});
+function renderMembretePreview(){
+  const has = !!state.membrete;
+  document.getElementById('membrete-empty').style.display = has? 'none':'block';
+  document.getElementById('membrete-filled').style.display = has? 'flex':'none';
+  if(has) document.getElementById('membrete-thumb').src = state.membrete;
+}
+
+/* ---- fotos ---- */
+document.getElementById('btn-add-fotos').addEventListener('click', ()=>document.getElementById('file-fotos').click());
+document.getElementById('file-fotos').addEventListener('change', async e=>{
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  if(!files.length) return;
+  showToast('Procesando '+files.length+' foto(s)…');
+  for(const file of files){
+    const dataUrl = await compressImage(file, 1500, 0.82);
+    const foto = {id:nextFotoId++, src:dataUrl, desc:'', ubicacion:'', fecha:'', assetId:null, url:null};
+    state.fotos.push(foto);
+    if(session.informeActual){
+      try{
+        const blob = await (await fetch(dataUrl)).blob();
+        const res = await subirAStorage(blob, 'jpg');
+        foto.assetId = res.path; foto.url = res.url;
+      }catch(err){ /* queda como imagen local; se reintentará en el próximo guardado */ }
+    }
+  }
+  renderFotoList(); scheduleRender(); scheduleSave();
+  showToast('Fotos agregadas');
+});
+function renderFotoList(){
+  const wrap = document.getElementById('foto-list');
+  wrap.innerHTML = '';
+  state.fotos.forEach((f,idx)=>{
+    const card = document.createElement('div'); card.className='foto-card';
+    card.innerHTML = `
+      <img src="${fotoSrc(f)}">
+      <div class="foto-fields">
+        <input type="text" placeholder="Ubicación / zona" value="${esc(f.ubicacion)}" data-k="ubicacion">
+        <input type="text" placeholder="Descripción" value="${esc(f.desc)}" data-k="desc">
+        <input type="date" value="${f.fecha||''}" data-k="fecha">
+      </div>
+      <div class="foto-actions">
+        <button data-a="up" title="Subir">↑</button>
+        <button data-a="down" title="Bajar">↓</button>
+        <button data-a="del" class="del" title="Eliminar">✕</button>
+      </div>`;
+    card.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input', ()=>{ f[inp.dataset.k]=inp.value; scheduleRender(); scheduleSave(); });
+    });
+    card.querySelector('[data-a=up]').addEventListener('click', ()=>{
+      if(idx===0) return;
+      [state.fotos[idx-1], state.fotos[idx]] = [state.fotos[idx], state.fotos[idx-1]];
+      renderFotoList(); scheduleRender(); scheduleSave();
+    });
+    card.querySelector('[data-a=down]').addEventListener('click', ()=>{
+      if(idx===state.fotos.length-1) return;
+      [state.fotos[idx+1], state.fotos[idx]] = [state.fotos[idx], state.fotos[idx+1]];
+      renderFotoList(); scheduleRender(); scheduleSave();
+    });
+    card.querySelector('[data-a=del]').addEventListener('click', ()=>{
+      state.fotos.splice(idx,1);
+      renderFotoList(); scheduleRender(); scheduleSave();
+    });
+    wrap.appendChild(card);
+  });
+}
+
+/* ---- control de versiones ---- */
+document.getElementById('btn-add-version').addEventListener('click', ()=>{
+  const cambios = prompt('Describe brevemente los cambios de esta versión:');
+  if(cambios===null) return;
+  const v = state.versiones.length+1;
+  state.versiones.push({v, fecha:new Date().toISOString().slice(0,10), autor: state.informe.elabora||'—', cambios: cambios||'—'});
+  renderVersionTable(); scheduleSave();
+});
+function renderVersionTable(){
+  const tbody = document.querySelector('#cv-table tbody');
+  tbody.innerHTML = state.versiones.map(v=>`
+    <tr><td class="v">v${v.v}</td><td>${fmtFecha(v.fecha)}</td><td>${esc(v.autor)}</td><td>${esc(v.cambios)}</td></tr>
+  `).join('') || `<tr><td colspan="4" style="color:var(--text-faint); text-align:center; padding:10px;">Sin versiones registradas</td></tr>`;
+}
+
+/* ---- cronograma de obra ---- */
+document.getElementById('btn-add-actividad').addEventListener('click', ()=>{
+  state.cronograma.push({id:nextActividadId++, actividad:'', inicio:'', fin:'', peso:0, avance:0});
+  renderCronoList(); onCronogramaChanged();
+});
+function onCronogramaChanged(){
+  if(state.informe.avanceAuto) toggleAvanceAuto(true);
+  scheduleRender(); scheduleSave();
+}
+function renderCronoList(){
+  const wrap = document.getElementById('crono-list');
+  wrap.innerHTML = '';
+  state.cronograma.forEach((a,idx)=>{
+    const card = document.createElement('div'); card.className='crono-card';
+    card.innerHTML = `
+      <input type="text" placeholder="Actividad — ej. Cimentación" value="${esc(a.actividad)}" data-k="actividad">
+      <div class="row2">
+        <input type="date" value="${a.inicio||''}" data-k="inicio" title="Inicio">
+        <input type="date" value="${a.fin||''}" data-k="fin" title="Fin">
+      </div>
+      <div class="row4">
+        <input type="number" min="0" max="100" placeholder="Peso %" value="${a.peso}" data-k="peso" title="Peso dentro del proyecto (%)">
+        <input type="number" min="0" max="100" placeholder="Avance %" value="${a.avance}" data-k="avance" title="Avance de la actividad (%)">
+        <span style="font-size:11px; color:var(--text-faint);">peso / avance</span>
+        <button class="btn-danger-ghost" title="Eliminar actividad" data-a="del">✕</button>
+      </div>`;
+    card.querySelectorAll('input').forEach(inp=>{
+      inp.addEventListener('input', ()=>{
+        const k = inp.dataset.k;
+        a[k] = (k==='peso'||k==='avance') ? Math.max(0,Math.min(100,Number(inp.value)||0)) : inp.value;
+        renderCronoTotal(); onCronogramaChanged();
+      });
+    });
+    card.querySelector('[data-a=del]').addEventListener('click', ()=>{
+      state.cronograma.splice(idx,1);
+      renderCronoList(); onCronogramaChanged();
+    });
+    wrap.appendChild(card);
+  });
+  renderCronoTotal();
+}
+function renderCronoTotal(){
+  const el = document.getElementById('crono-total');
+  if(!state.cronograma.length){ el.textContent=''; return; }
+  const totalPeso = state.cronograma.reduce((s,a)=>s+Number(a.peso||0),0);
+  el.innerHTML = `Peso total: <b>${totalPeso}%</b> &nbsp;·&nbsp; Avance ponderado: <b>${computeAvanceFromCronograma()}%</b>`;
+}
+
+document.getElementById('btn-ai-cronograma').addEventListener('click', ()=>document.getElementById('file-crono-img').click());
+document.getElementById('file-crono-img').addEventListener('change', async e=>{
+  const file = e.target.files[0]; e.target.value=''; if(!file) return;
+  const btn = document.getElementById('btn-ai-cronograma');
+  btn.disabled=true; const original=btn.textContent; btn.textContent='Analizando imagen…';
+  try{
+    const prompt = `Esta imagen muestra un cronograma o programación de obra (puede ser una tabla, un diagrama de Gantt, una hoja de cálculo fotografiada o un documento escaneado). Extrae las actividades que puedas identificar con claridad. Responde ÚNICAMENTE con un objeto JSON con la forma {"actividades": [{"actividad": "string", "inicio": "YYYY-MM-DD o cadena vacía si no es legible", "fin": "YYYY-MM-DD o cadena vacía si no es legible", "peso": number entre 0 y 100 (estimado según duración/importancia si no aparece explícito), "avance": number entre 0 y 100 (usa 0 si no aparece)}]}. No inventes actividades que no estén en la imagen. Si una fecha no tiene año visible, infiérelo del contexto del documento; si no puedes inferirlo, deja el campo vacío. No incluyas texto fuera del JSON.`;
+    const imageBase64 = await fileToBase64(file);
+    const text = await llamarIA('cronograma', { prompt, imageBase64, mediaType: file.type||'image/jpeg' });
+    const data = parseJSONLoose(text);
+    const acts = (data && Array.isArray(data.actividades)) ? data.actividades : [];
+    if(!acts.length) throw new Error('No se pudo identificar actividades en la imagen.');
+    if(state.cronograma.length && !confirm('Ya hay actividades cargadas. ¿Agregar las '+acts.length+' actividades detectadas al final de la lista?')){
+      btn.disabled=false; btn.textContent=original; return;
+    }
+    acts.forEach(a=>{
+      state.cronograma.push({
+        id:nextActividadId++, actividad:String(a.actividad||'').slice(0,140),
+        inicio:/^\d{4}-\d{2}-\d{2}$/.test(a.inicio)?a.inicio:'', fin:/^\d{4}-\d{2}-\d{2}$/.test(a.fin)?a.fin:'',
+        peso:Math.max(0,Math.min(100,Number(a.peso)||0)), avance:Math.max(0,Math.min(100,Number(a.avance)||0))
+      });
+    });
+    renderCronoList(); onCronogramaChanged();
+    showToast(acts.length+' actividad(es) agregadas — revísalas y ajústalas');
+  }catch(err){
+    showToast('No se pudo leer el cronograma: '+((err&&err.message)||'error desconocido'), true);
+  }finally{
+    btn.disabled=false; btn.textContent=original;
+  }
+});
+
+/* ---- resumen ejecutivo asistido ---- */
+document.getElementById('btn-add-item-resumen').addEventListener('click', ()=>{
+  state.resumenItems.push('');
+  renderResumenList(); scheduleSave();
+  const tas = document.querySelectorAll('#resumen-list textarea');
+  if(tas.length) tas[tas.length-1].focus();
+});
+function renderResumenList(){
+  const wrap = document.getElementById('resumen-list');
+  wrap.innerHTML = '';
+  state.resumenItems.forEach((texto,idx)=>{
+    const card = document.createElement('div'); card.className='item-card';
+    card.innerHTML = `
+      <textarea spellcheck="true" lang="es" placeholder="Punto del resumen…">${esc(texto)}</textarea>
+      <div class="foto-actions">
+        <button data-a="up" title="Subir">↑</button>
+        <button data-a="down" title="Bajar">↓</button>
+        <button data-a="del" class="del" title="Eliminar">✕</button>
+      </div>`;
+    card.querySelector('textarea').addEventListener('input', e=>{
+      state.resumenItems[idx] = e.target.value; scheduleRender(); scheduleSave();
+    });
+    card.querySelector('[data-a=up]').addEventListener('click', ()=>{
+      if(idx===0) return;
+      [state.resumenItems[idx-1], state.resumenItems[idx]] = [state.resumenItems[idx], state.resumenItems[idx-1]];
+      renderResumenList(); scheduleRender(); scheduleSave();
+    });
+    card.querySelector('[data-a=down]').addEventListener('click', ()=>{
+      if(idx===state.resumenItems.length-1) return;
+      [state.resumenItems[idx+1], state.resumenItems[idx]] = [state.resumenItems[idx], state.resumenItems[idx+1]];
+      renderResumenList(); scheduleRender(); scheduleSave();
+    });
+    card.querySelector('[data-a=del]').addEventListener('click', ()=>{
+      state.resumenItems.splice(idx,1);
+      renderResumenList(); scheduleRender(); scheduleSave();
+    });
+    wrap.appendChild(card);
+  });
+}
+
+/* ---- resumen ejecutivo por plantilla (sin IA) ---- */
+function generarResumenPlantilla(){
+  const p = state.proyecto, i = state.informe;
+  const items = [];
+  const rango = (i.desde && i.hasta) ? `entre el ${fmtFecha(i.desde)} y el ${fmtFecha(i.hasta)}` : 'durante el período reportado';
+  items.push(`El proyecto ${p.nombre||'en referencia'} registra un avance general del ${i.avance||0}% ${rango}.`);
+
+  const acts = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
+  if(acts.length){
+    const completadas = acts.filter(a=>Number(a.avance)>=100);
+    const enCurso = acts.filter(a=>Number(a.avance)>0 && Number(a.avance)<100);
+    const sinIniciar = acts.filter(a=>!a.avance || Number(a.avance)<=0);
+    if(completadas.length) items.push(`Se completaron las siguientes actividades: ${completadas.map(a=>a.actividad).join(', ')}.`);
+    if(enCurso.length) items.push(`Continúan en ejecución: ${enCurso.map(a=>`${a.actividad} (${a.avance}%)`).join(', ')}.`);
+    if(sinIniciar.length) items.push(`Aún no han iniciado: ${sinIniciar.map(a=>a.actividad).join(', ')}.`);
+  }
+
+  if(state.fotos.length){
+    const zonas = [...new Set(state.fotos.map(f=>f.ubicacion).filter(Boolean))];
+    items.push(`El registro fotográfico documenta ${state.fotos.length} evidencia(s)${zonas.length? ' en '+zonas.slice(0,5).join(', ')+(zonas.length>5?' y otras zonas':'') : ''}.`);
+  }
+
+  if(i.observaciones && i.observaciones.trim()){
+    items.push('Se registraron observaciones adicionales sobre novedades del período, detalladas en la sección correspondiente.');
+  }
+  return items;
+}
+document.getElementById('btn-plantilla-resumen').addEventListener('click', ()=>{
+  if(state.resumenItems.length && !confirm('Ya hay puntos escritos en el resumen. ¿Agregar los generados por plantilla al final de la lista?')) return;
+  const items = generarResumenPlantilla();
+  if(items.length<=1 && !state.cronograma.length && !state.fotos.length){
+    showToast('Con más datos en el cronograma o las fotos, la plantilla arma un resumen más completo.', true);
+  }
+  state.resumenItems.push(...items);
+  renderResumenList(); scheduleRender(); scheduleSave();
+  showToast('Resumen generado por plantilla — revísalo y ajústalo');
+});
+
+/* ---- resumen ejecutivo asistido (IA) ---- */
+document.getElementById('btn-ai-resumen').addEventListener('click', generarResumenIA);
+async function generarResumenIA(){
+  const btn = document.getElementById('btn-ai-resumen');
+  if(state.resumenItems.length && !confirm('Ya hay puntos escritos en el resumen. ¿Agregar los nuevos puntos generados por IA al final de la lista?')) return;
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Generando…';
+  try{
+    const p = state.proyecto, i = state.informe;
+    const actividadesTxt = state.cronograma.length
+      ? state.cronograma.map(a=>`- ${a.actividad||'(sin nombre)'}: ${a.avance}% de avance (peso ${a.peso}%)`).join('\n')
+      : '(sin actividades registradas en el cronograma)';
+    const fotosTxt = state.fotos.length
+      ? state.fotos.slice(0,12).map(f=>`- ${f.ubicacion||'zona sin especificar'}${f.desc? ': '+f.desc:''}`).join('\n')
+      : '(sin registro fotográfico aún)';
+    const prompt = `Eres un ingeniero/arquitecto residente redactando el resumen ejecutivo de un informe técnico de avance de obra en Colombia. Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, con la forma {"items": ["frase 1", "frase 2", ...]}. Genera entre 4 y 7 frases breves, concretas y en tono técnico-profesional (tercera persona, sin adjetivos exagerados), cada una cubriendo un aspecto distinto: avance general, actividades ejecutadas en el período, hitos o hallazgos relevantes, y estado frente al cronograma. No inventes cifras que no aparezcan en los datos.
+
+Datos del proyecto:
+- Nombre: ${p.nombre||'—'}
+- Cliente: ${p.cliente||'—'}
+- Ubicación: ${p.ubicacion||'—'}
+- Período del informe: ${fmtFecha(i.desde)} a ${fmtFecha(i.hasta)}
+- Avance general: ${i.avance}%
+
+Cronograma de actividades:
+${actividadesTxt}
+
+Observaciones ya registradas: ${i.observaciones || '(ninguna)'}
+
+Registro fotográfico (ubicaciones/descripciones):
+${fotosTxt}`;
+    const text = await llamarIA('resumen', { prompt });
+    const data = parseJSONLoose(text);
+    const items = (data && Array.isArray(data.items)) ? data.items.filter(s=>typeof s==='string' && s.trim()) : [];
+    if(!items.length) throw new Error('La IA no devolvió contenido utilizable.');
+    state.resumenItems.push(...items);
+    renderResumenList(); scheduleRender(); scheduleSave();
+    showToast('Borrador generado — revísalo y ajústalo a tu criterio');
+  }catch(err){
+    showToast('No se pudo generar el borrador: '+((err&&err.message)||'error desconocido'), true);
+  }finally{
+    btn.disabled=false; btn.textContent=original;
+  }
+}
+
+/* ============================= RENDER DE VISTA PREVIA ============================= */
+let renderScheduled = false;
+function scheduleRender(){
+  if(renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(()=>{ renderScheduled=false; render(document.getElementById('canvas')); });
+}
+
+function chunk(arr, n){
+  const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out;
+}
+
+function pageStyle(){
+  const dim = PAGE_MM[state.tamanoHoja];
+  return `width:${dim.w}mm; height:${dim.h}mm;`;
+}
+function contentPadStyle(){
+  const m = state.margenes;
+  return `padding:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm;`;
+}
+function membreteHTML(){
+  return state.membrete ? `<img class="bg-membrete" src="${state.membrete}">` : '';
+}
+
+function buildPortada(pageNo,totalPages){
+  const p = state.proyecto, i = state.informe;
+  const cvRows = state.versiones.length ? state.versiones.map(v=>`
+      <tr><td>v${v.v}</td><td>${fmtFecha(v.fecha)}</td><td>${esc(v.autor)}</td><td>${esc(v.cambios)}</td></tr>
+    `).join('') : `<tr><td colspan="4" style="color:#b8b2a4;">Versión inicial</td></tr>`;
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="portada-titulo">
+          <div class="eyebrow">INFORME TÉCNICO · AVANCE DE OBRA</div>
+          <h1>${esc(p.nombre)||'Proyecto sin nombre'}</h1>
+          <div class="sub">Informe N.º ${esc(i.numero)||'—'} &nbsp;·&nbsp; Período ${fmtFecha(i.desde)} — ${fmtFecha(i.hasta)}</div>
+        </div>
+        <div class="datos-proyecto">
+          <div class="dp-row"><div class="k">Cliente</div><div class="v">${esc(p.cliente)||'—'}</div></div>
+          <div class="dp-row"><div class="k">Ubicación</div><div class="v">${esc(p.ubicacion)||'—'}</div></div>
+          <div class="dp-row"><div class="k">Contratista</div><div class="v">${esc(p.contratista)||'—'}</div></div>
+          <div class="dp-row"><div class="k">Interventoría</div><div class="v">${esc(p.interventor)||'—'}</div></div>
+          <div class="dp-row"><div class="k">Contrato / ref.</div><div class="v">${esc(p.contrato)||'—'}</div></div>
+          <div class="dp-row"><div class="k">Fecha emisión</div><div class="v">${fmtFecha(i.fecha)}</div></div>
+          <div class="dp-row"><div class="k">Elaborado por</div><div class="v">${esc(i.elabora)||'—'}${i.cargo? ' — '+esc(i.cargo):''}</div></div>
+        </div>
+        <div class="avance-box">
+          <div class="avance-num">${i.avance}%</div>
+          <div style="flex:1;">
+            <div style="font-size:9pt; color:var(--ink-dim); margin-bottom:2mm;">Avance general del período</div>
+            <div class="avance-bar"><div style="width:${i.avance}%;"></div></div>
+          </div>
+        </div>
+        <div class="cv-title">Control de versiones</div>
+        <table class="cv-print"><thead><tr><th>V.</th><th>Fecha</th><th>Autor</th><th>Cambios</th></tr></thead>
+          <tbody>${cvRows}</tbody></table>
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+function buildTextPage(titulo, texto, folio, pageNo, totalPages, extraBottom){
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="hoja-titulo"><h2>${titulo}</h2><span class="folio">${folio}</span></div>
+        <div class="cuerpo-texto" data-empty="Sin contenido para esta sección.">${esc(texto)}</div>
+        ${extraBottom||''}
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+function buildResumenPage(folio, pageNo, totalPages){
+  const items = state.resumenItems.filter(t=>t && t.trim());
+  const body = items.length
+    ? `<ul class="resumen-lista">${items.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`
+    : `<div class="resumen-vacio">Sin contenido para esta sección. Usa «Generar borrador con IA» o agrega puntos manualmente.</div>`;
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="hoja-titulo"><h2>Resumen ejecutivo</h2><span class="folio">${folio}</span></div>
+        ${body}
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+const CRONO_FILAS_POR_HOJA = 11;
+function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
+  const rango = (maxDate - minDate) || 1;
+  const rows = grupo.map(a=>{
+    const ini = a.inicio ? new Date(a.inicio+'T00:00:00') : null;
+    const fin = a.fin ? new Date(a.fin+'T00:00:00') : null;
+    let bar = '<span style="font-size:8.5pt; color:#b8b2a4;">sin fechas</span>';
+    if(ini && fin && fin>=ini){
+      const leftPct = Math.max(0, Math.min(100, ((ini-minDate)/rango)*100));
+      const widthPct = Math.max(1.5, Math.min(100-leftPct, ((fin-ini)/rango)*100));
+      const fillPct = widthPct * (Math.max(0,Math.min(100,a.avance||0))/100);
+      bar = `<div class="gantt-track">
+        <div class="gantt-fill-bg" style="left:${leftPct}%; width:${widthPct}%;"></div>
+        <div class="gantt-fill" style="left:${leftPct}%; width:${fillPct}%;"></div>
+      </div>`;
+    }
+    return `<tr>
+      <td>${esc(a.actividad)||'—'}</td>
+      <td class="num">${fmtFecha(a.inicio)}</td>
+      <td class="num">${fmtFecha(a.fin)}</td>
+      <td class="num">${a.peso||0}%</td>
+      <td class="num">${a.avance||0}%</td>
+      <td style="min-width:26mm;">${bar}</td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="hoja-titulo"><h2>Cronograma de obra</h2><span class="folio">${folio}</span></div>
+        <table class="crono-table">
+          <thead><tr><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Peso</th><th>Avance</th><th>Programación</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+function buildFotoPage(grupo, folio, indexBase, pageNo, totalPages){
+  const n = state.fotosPorHoja;
+  const items = grupo.map(f=>`
+    <div class="foto-item">
+      <div class="ph"><img src="${fotoSrc(f)}"></div>
+      <div class="cap"><b>${esc(f.ubicacion)||'Sin ubicación'}</b>${f.fecha? ' · '+fmtFecha(f.fecha):''}${f.desc? '<br>'+esc(f.desc):''}</div>
+    </div>`).join('');
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="hoja-titulo"><h2>Registro fotográfico</h2><span class="folio">${folio}</span></div>
+        <div class="foto-grid n${n}">${items}</div>
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+function buildFirmasPage(folio, pageNo, totalPages){
+  const [f1,f2] = state.firmas;
+  return `
+  <div class="pagina" style="${pageStyle()}">
+    ${membreteHTML()}
+    <div class="contenido" style="${contentPadStyle()}">
+      <div class="zona-util">
+        <div class="hoja-titulo"><h2>Observaciones y firmas</h2><span class="folio">${folio}</span></div>
+        <div class="cuerpo-texto" data-empty="Sin observaciones registradas.">${esc(state.informe.observaciones)}</div>
+        <div class="firmas-row">
+          <div class="firma-box"><div class="linea"></div><div class="nom">${esc(f1.nombre)||'&nbsp;'}</div><div class="cargo">${esc(f1.cargo)}</div></div>
+          <div class="firma-box"><div class="linea"></div><div class="nom">${esc(f2.nombre)||'&nbsp;'}</div><div class="cargo">${esc(f2.cargo)}</div></div>
+        </div>
+      </div>
+      <div class="num-pagina">${pageNo} / ${totalPages}</div>
+    </div>
+  </div>`;
+}
+
+function buildAllPagesHTML(){
+  const fotoGrupos = state.fotos.length ? chunk(state.fotos, state.fotosPorHoja) : [];
+  const cronoValido = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
+  const cronoGrupos = cronoValido.length ? chunk(cronoValido, CRONO_FILAS_POR_HOJA) : [];
+  const totalPages = 1 + 1 + cronoGrupos.length + fotoGrupos.length + 1; // portada + resumen + cronograma + fotos + firmas
+  let pageNo = 1;
+  let html = '';
+  html += buildPortada(pageNo++, totalPages);
+  html += buildResumenPage('Sección 1', pageNo++, totalPages);
+  if(cronoGrupos.length){
+    const fechas = cronoValido.flatMap(a=>[a.inicio,a.fin]).filter(Boolean).map(d=>new Date(d+'T00:00:00'));
+    if(state.informe.desde) fechas.push(new Date(state.informe.desde+'T00:00:00'));
+    if(state.informe.hasta) fechas.push(new Date(state.informe.hasta+'T00:00:00'));
+    const minDate = fechas.length ? new Date(Math.min(...fechas)) : new Date();
+    const maxDate = fechas.length ? new Date(Math.max(...fechas)) : new Date();
+    cronoGrupos.forEach((g,idx)=>{
+      html += buildCronoPage(g, 'Sección 2 · '+(idx+1)+'/'+cronoGrupos.length, pageNo++, totalPages, minDate, maxDate);
+    });
+  }
+  fotoGrupos.forEach((g,idx)=>{
+    html += buildFotoPage(g, 'Sección 3 · '+(idx+1)+'/'+fotoGrupos.length, idx, pageNo++, totalPages);
+  });
+  if(!fotoGrupos.length){
+    html += `<div class="pagina" style="${pageStyle()}">${membreteHTML()}<div class="contenido" style="${contentPadStyle()}"><div class="zona-util"><div class="hoja-titulo"><h2>Registro fotográfico</h2><span class="folio">Sección 3</span></div><div class="empty-fotos">Aún no se han agregado fotografías.<br>Usa el panel «Registro fotográfico» para cargarlas.</div></div></div></div>`;
+  }
+  html += buildFirmasPage('Sección 4', pageNo++, totalPages);
+  return html;
+}
+
+function render(container){
+  container.innerHTML = buildAllPagesHTML();
+}
+
+/* ============================= EXPORTAR PDF ============================= */
+document.getElementById('btn-pdf').addEventListener('click', exportPDF);
+async function exportPDF(){
+  if(!window.jspdf || !window.html2canvas){ showToast('Las librerías de exportación no cargaron. Revisa tu conexión.', true); return; }
+  showModal('Generando PDF…');
+  try{
+    const hidden = document.createElement('div');
+    hidden.style.position='fixed'; hidden.style.left='-99999px'; hidden.style.top='0';
+    hidden.innerHTML = buildAllPagesHTML();
+    document.body.appendChild(hidden);
+    const pages = hidden.querySelectorAll('.pagina');
+    const dim = PAGE_MM[state.tamanoHoja];
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'mm', format:[dim.w, dim.h], orientation:'portrait' });
+    for(let idx=0; idx<pages.length; idx++){
+      document.getElementById('export-modal-text').textContent = `Generando PDF… página ${idx+1} de ${pages.length}`;
+      const canvas = await html2canvas(pages[idx], { scale:2.2, useCORS:true, backgroundColor:'#fdfcf8' });
+      const img = canvas.toDataURL('image/jpeg', 0.93);
+      if(idx>0) pdf.addPage([dim.w,dim.h], 'portrait');
+      pdf.addImage(img, 'JPEG', 0, 0, dim.w, dim.h);
+    }
+    document.body.removeChild(hidden);
+    const blob = pdf.output('blob');
+    await saveFile((state.proyecto.nombre||'informe-avance')+'.pdf', blob);
+  }catch(e){
+    showToast('No se pudo generar el PDF: '+e.message, true);
+  }finally{
+    hideModal();
+  }
+}
+
+/* ============================= EXPORTAR WORD ============================= */
+document.getElementById('btn-word').addEventListener('click', exportWord);
+async function exportWord(){
+  if(!window.docx){ showToast('La librería de exportación a Word no cargó. Revisa tu conexión.', true); return; }
+  showModal('Generando documento Word…');
+  try{
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, ImageRun,
+            Header, HeadingLevel, AlignmentType, WidthType, BorderStyle, VerticalAlign } = window.docx;
+
+    const dim = PAGE_MM[state.tamanoHoja];
+    const pxW = Math.round(dim.w * 3.78), pxH = Math.round(dim.h * 3.78);
+
+    let headerChildren = [];
+    if(state.membrete){
+      const membreteBytes = await imageBytes(state.membrete);
+      if(membreteBytes){
+        headerChildren.push(new Paragraph({
+          children:[ new ImageRun({ data: membreteBytes, transformation:{ width: pxW*0.53, height: pxH*0.53 }, type:'jpg' }) ],
+          alignment: AlignmentType.CENTER
+        }));
+      }
+    }
+
+    const p = state.proyecto, i = state.informe;
+    const docxFont = state.fuenteDoc==='century' ? 'Century Gothic' : 'Arial';
+    const docxSize = Math.round(state.tamanoFuente*2);
+    const noBorder = { style: BorderStyle.NONE, size:0, color:'FFFFFF' };
+    const cellBorders = { top:noBorder,bottom:noBorder,left:noBorder,right:noBorder };
+    function dpRow(k,v){
+      return new TableRow({ children:[
+        new TableCell({ width:{size:30,type:WidthType.PERCENTAGE}, borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:k,bold:true,size:18,color:'565049'})]})]}),
+        new TableCell({ width:{size:70,type:WidthType.PERCENTAGE}, borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:v||'—',size:20})]})]}),
+      ]});
+    }
+
+    const children = [];
+    children.push(new Paragraph({ text:'INFORME TÉCNICO · AVANCE DE OBRA', alignment:AlignmentType.CENTER, spacing:{after:80}, children:[new TextRun({text:'INFORME TÉCNICO · AVANCE DE OBRA', bold:true, size:16, color:'3D5A73'})] }));
+    children.push(new Paragraph({ heading:HeadingLevel.TITLE, alignment:AlignmentType.CENTER, children:[new TextRun({text:p.nombre||'Proyecto sin nombre', bold:true, size:40})]}));
+    children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:300}, children:[new TextRun({text:`Informe N.º ${i.numero||'—'}  ·  Período ${fmtFecha(i.desde)} — ${fmtFecha(i.hasta)}`, size:20, color:'565049'})]}));
+    children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[
+      dpRow('CLIENTE', p.cliente), dpRow('UBICACIÓN', p.ubicacion), dpRow('CONTRATISTA', p.contratista),
+      dpRow('INTERVENTORÍA', p.interventor), dpRow('CONTRATO / REF.', p.contrato),
+      dpRow('FECHA EMISIÓN', fmtFecha(i.fecha)), dpRow('ELABORADO POR', (i.elabora||'—')+(i.cargo?' — '+i.cargo:'')),
+      dpRow('AVANCE GENERAL', i.avance+'%'),
+    ]}));
+    children.push(new Paragraph({ text:'', spacing:{after:200} }));
+    children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, children:[new TextRun({text:'Resumen ejecutivo'})]}));
+    const resumenValidos = state.resumenItems.filter(t=>t && t.trim());
+    if(resumenValidos.length){
+      resumenValidos.forEach(t=>{
+        children.push(new Paragraph({ bullet:{level:0}, spacing:{after:120}, children:[new TextRun({text:t, size:docxSize})]}));
+      });
+    }else{
+      children.push(new Paragraph({ spacing:{after:300}, children:[new TextRun({text:'Sin contenido para esta sección.', size:docxSize, italics:true})]}));
+    }
+
+    const cronoValidos = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
+    if(cronoValidos.length){
+      children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Cronograma de obra'})]}));
+      const crHeader = new TableRow({ tableHeader:true, children:['Actividad','Inicio','Fin','Peso','Avance'].map(h=>
+        new TableCell({ borders:cellBorders, shading:{fill:'EFEBE0'}, children:[new Paragraph({children:[new TextRun({text:h,bold:true,size:18})]})]})
+      )});
+      const crRows = cronoValidos.map(a=> new TableRow({ children:[
+        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:a.actividad||'—', size:18})]})]}),
+        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:fmtFecha(a.inicio), size:18})]})]}),
+        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:fmtFecha(a.fin), size:18})]})]}),
+        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:(a.peso||0)+'%', size:18})]})]}),
+        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:(a.avance||0)+'%', size:18})]})]}),
+      ]}));
+      children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[crHeader, ...crRows] }));
+      children.push(new Paragraph({ text:'', spacing:{after:200} }));
+    }
+
+    children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Registro fotográfico'})]}));
+    for(const f of state.fotos){
+      let imgPar;
+      const bytes = await imageBytes(fotoSrc(f));
+      if(bytes){
+        imgPar = new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:60}, children:[
+          new ImageRun({ data: bytes, transformation:{ width:380, height:260 }, type:'jpg' })
+        ]});
+      }else{
+        imgPar = new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'[imagen no disponible]', italics:true, size:16})]});
+      }
+      children.push(imgPar);
+      const capParts = [f.ubicacion, f.fecha? fmtFecha(f.fecha):null, f.desc].filter(Boolean).join('  ·  ');
+      children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:260}, children:[new TextRun({text:capParts||'—', size:18, color:'565049'})]}));
+    }
+    if(!state.fotos.length){
+      children.push(new Paragraph({children:[new TextRun({text:'Aún no se han agregado fotografías.', italics:true, color:'8A8578'})]}));
+    }
+
+    children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Observaciones y novedades'})]}));
+    children.push(new Paragraph({ spacing:{after:500}, children:[new TextRun({text:i.observaciones || 'Sin observaciones registradas.', size:21})]}));
+
+    const [f1,f2] = state.firmas;
+    children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[ new TableRow({ children:[
+      new TableCell({ borders:cellBorders, width:{size:50,type:WidthType.PERCENTAGE}, children:[
+        new Paragraph({alignment:AlignmentType.CENTER, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f1.nombre||' ', bold:true})]}),
+        new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:f1.cargo||'', size:18, color:'565049'})]}),
+      ]}),
+      new TableCell({ borders:cellBorders, width:{size:50,type:WidthType.PERCENTAGE}, children:[
+        new Paragraph({alignment:AlignmentType.CENTER, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f2.nombre||' ', bold:true})]}),
+        new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:f2.cargo||'', size:18, color:'565049'})]}),
+      ]}),
+    ]})]}));
+
+    const doc = new Document({
+      styles:{ default:{ document:{ run:{ font:docxFont, size:docxSize } } } },
+      sections:[{
+        properties:{ page:{ size:{ width: Math.round(dim.w*56.7), height: Math.round(dim.h*56.7) },
+          margin:{ top: Math.round(state.margenes.top*56.7), bottom: Math.round(state.margenes.bottom*56.7),
+                   left: Math.round(state.margenes.left*56.7), right: Math.round(state.margenes.right*56.7) } } },
+        headers: state.membrete ? { default: new Header({ children: headerChildren }) } : undefined,
+        children
+      }]
+    });
+    const blob = await Packer.toBlob(doc);
+    await saveFile((state.proyecto.nombre||'informe-avance')+'.docx', blob);
+  }catch(e){
+    showToast('No se pudo generar el Word: '+e.message, true);
+  }finally{
+    hideModal();
+  }
+}
+
+/* ============================= GUARDAR ARCHIVO ============================= */
+async function saveFile(filename, blob){
+  try{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    showToast('Archivo descargado');
+  }catch(err){
+    showToast('No se pudo generar la descarga: '+(err && err.message || 'error desconocido'), true);
+  }
+}
+
+function showModal(text){ document.getElementById('export-modal-text').textContent=text; document.getElementById('export-modal').classList.add('show'); }
+function hideModal(){ document.getElementById('export-modal').classList.remove('show'); }
+
+/* ============================= INICIO ============================= */
+(async function init(){
+  await initSession();
+})();
+</script>
+</body>
+</html>
