@@ -1403,7 +1403,7 @@ function initPickerMap(){
   if(pickerMap || !window.L) return;
   const el = document.getElementById('mapa-picker');
   if(!el || el.offsetWidth===0) return;
-  pickerMap = L.map(el, { attributionControl:false }).setView(
+  pickerMap = L.map(el, { attributionControl:false, scrollWheelZoom:false }).setView(
     [state.proyecto.mapLat ?? 4.5709, state.proyecto.mapLng ?? -74.2973],
     state.proyecto.mapLat!=null ? 15 : 5
   );
