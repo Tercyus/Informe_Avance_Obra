@@ -711,7 +711,7 @@ async function imageBytes(srcOrUrl){
 /* ============================= SUPABASE: CONFIGURACIÓN Y SESIÓN ============================= */
 const SUPABASE_URL = 'https://hlrihncpocgmnxudxfjz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscmlobmNwb2NnbW54dWR4Zmp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwODc1MjIsImV4cCI6MjEwNTY2MzUyMn0.iTOVtzWR6hy-etsx-1ER0HqL1YXDNly4m9yWEXqVW_U';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MEDIA_BUCKET = 'informes-media';
 
 let session = {
@@ -733,9 +733,9 @@ function paintAvatar(el, name, id){
   el.style.background = avatarColor(id||name||'');
 }
 async function initSession(){
-  const { data:{ session: sbSession } } = await supabase.auth.getSession();
+  const { data:{ session: sbSession } } = await sb.auth.getSession();
   if(sbSession && sbSession.user){ await onAuthed(sbSession.user); } else { showLoginScreen(); }
-  supabase.auth.onAuthStateChange((event, sbSession)=>{
+  sb.auth.onAuthStateChange((event, sbSession)=>{
     if(event==='SIGNED_IN' && sbSession && sbSession.user && session.userId !== sbSession.user.id){
       onAuthed(sbSession.user);
     }else if(event==='SIGNED_OUT'){
@@ -761,7 +761,7 @@ async function onAuthed(user){
 }
 async function resolveRole(){
   try{
-    const { data, error } = await supabase.from('profiles').select('rol, nombre').eq('id', session.userId).single();
+    const { data, error } = await sb.from('profiles').select('rol, nombre').eq('id', session.userId).single();
     if(error) throw error;
     if(data){ session.role = data.rol || 'autor'; if(data.nombre) session.userName = data.nombre; }
   }catch(e){ session.role='autor'; }
@@ -791,7 +791,7 @@ document.getElementById('btn-login').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-login');
   btn.disabled=true; btn.textContent='Enviando…';
   try{
-    const { error } = await supabase.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin + window.location.pathname } });
+    const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin + window.location.pathname } });
     if(error) throw error;
     document.getElementById('login-form').style.display='none';
     document.getElementById('login-sent').style.display='block';
@@ -807,7 +807,7 @@ document.getElementById('btn-login-otra').addEventListener('click', ()=>{
   document.getElementById('login-form').style.display='block';
   document.getElementById('login-email').value='';
 });
-document.getElementById('btn-logout').addEventListener('click', async ()=>{ await supabase.auth.signOut(); });
+document.getElementById('btn-logout').addEventListener('click', async ()=>{ await sb.auth.signOut(); });
 
 /* ============================= INDEXEDDB ============================= */
 let dbPromise = new Promise((resolve,reject)=>{
@@ -931,7 +931,7 @@ function informeFromRow(r){
 async function cargarProyectos(){
   if(!session.cloudOn) return [];
   try{
-    const { data, error } = await supabase.from('proyectos').select('*').order('updated_at', { ascending:false }).limit(200);
+    const { data, error } = await sb.from('proyectos').select('*').order('updated_at', { ascending:false }).limit(200);
     if(error) throw error;
     return data.map(proyectoFromRow);
   }catch(e){ return []; }
@@ -939,7 +939,7 @@ async function cargarProyectos(){
 async function cargarInformes(proyectoId){
   if(!session.cloudOn) return [];
   try{
-    const { data, error } = await supabase.from('informes').select('*').eq('proyecto_id', proyectoId).order('created_at', { ascending:false }).limit(200);
+    const { data, error } = await sb.from('informes').select('*').eq('proyecto_id', proyectoId).order('created_at', { ascending:false }).limit(200);
     if(error) throw error;
     return data.map(informeFromRow);
   }catch(e){ return []; }
@@ -1015,7 +1015,7 @@ document.getElementById('btn-nuevo-proyecto').addEventListener('click', async ()
   const nombre = prompt('Nombre del nuevo proyecto:');
   if(!nombre || !nombre.trim()) return;
   try{
-    const { data, error } = await supabase.from('proyectos').insert({
+    const { data, error } = await sb.from('proyectos').insert({
       nombre: nombre.trim(), creado_por: session.userId
     }).select().single();
     if(error) throw error;
@@ -1028,7 +1028,7 @@ document.getElementById('btn-nuevo-informe-ctx').addEventListener('click', ()=>{
 async function crearInformeParaProyecto(proyecto){
   try{
     const numero = 'INF-'+String((session.informesCacheActual?session.informesCacheActual.length:0)+1).padStart(3,'0');
-    const { data, error } = await supabase.from('informes').insert({
+    const { data, error } = await sb.from('informes').insert({
       proyecto_id: proyecto.id, numero, fecha_emision: new Date().toISOString().slice(0,10),
       estado:'borrador', autor_id: session.userId, autor_nombre: session.userName, comentario:'', data:null
     }).select().single();
@@ -1091,7 +1091,7 @@ async function syncCloudNow(){
   if(!session.informeActual) return;
   try{
     const payload = cloudPayloadFromState();
-    const { error: e1 } = await supabase.from('informes').update({
+    const { error: e1 } = await sb.from('informes').update({
       data: payload, numero: state.informe.numero||session.informeActual.numero,
       fecha_emision: state.informe.fecha||session.informeActual.fechaEmision,
       estado: state.informe.estado||'borrador', comentario: state.informe.comentario||''
@@ -1099,7 +1099,7 @@ async function syncCloudNow(){
     if(e1) throw e1;
     session.informeActual.estado = state.informe.estado; session.informeActual.numero = state.informe.numero;
     if(session.proyectoActual){
-      const { error: e2 } = await supabase.from('proyectos').update({
+      const { error: e2 } = await sb.from('proyectos').update({
         nombre: state.proyecto.nombre||session.proyectoActual.nombre, cliente: state.proyecto.cliente,
         ubicacion: state.proyecto.ubicacion, contratista: state.proyecto.contratista,
         interventor: state.proyecto.interventor, contrato: state.proyecto.contrato
@@ -1200,7 +1200,7 @@ async function renderUMCurrent(){
   const wrap = document.getElementById('um-current');
   wrap.innerHTML = '<div style="font-size:11.5px; color:var(--text-faint);">Cargando…</div>';
   try{
-    const { data, error } = await supabase.from('profiles').select('id, nombre, email, rol').order('created_at', { ascending:true });
+    const { data, error } = await sb.from('profiles').select('id, nombre, email, rol').order('created_at', { ascending:true });
     if(error) throw error;
     wrap.innerHTML='';
     data.forEach(u=>{
@@ -1212,7 +1212,7 @@ async function renderUMCurrent(){
       sel.value = u.rol||'autor';
       sel.addEventListener('change', async ()=>{
         try{
-          const { error: e2 } = await supabase.from('profiles').update({ rol: sel.value }).eq('id', u.id);
+          const { error: e2 } = await sb.from('profiles').update({ rol: sel.value }).eq('id', u.id);
           if(e2) throw e2;
           showToast('Rol actualizado');
           if(u.id===session.userId){ session.role = sel.value; renderUserChip(); }
@@ -1371,9 +1371,9 @@ document.querySelectorAll('#fotos-por-hoja .chip').forEach(chip=>{
 document.getElementById('membrete-empty').addEventListener('click', ()=>document.getElementById('file-membrete').click());
 async function subirAStorage(blob, ext){
   const path = session.userId+'/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+ext;
-  const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(path, blob, { contentType: blob.type||'image/jpeg' });
+  const { error } = await sb.storage.from(MEDIA_BUCKET).upload(path, blob, { contentType: blob.type||'image/jpeg' });
   if(error) throw error;
-  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+  const { data } = sb.storage.from(MEDIA_BUCKET).getPublicUrl(path);
   return { path, url: data.publicUrl };
 }
 
@@ -1396,7 +1396,7 @@ function parseJSONLoose(text){
   throw new Error('La IA no devolvió un JSON válido.');
 }
 async function llamarIA(tipo, extra){
-  const { data, error } = await supabase.functions.invoke('ai-informes', { body: Object.assign({tipo}, extra) });
+  const { data, error } = await sb.functions.invoke('ai-informes', { body: Object.assign({tipo}, extra) });
   if(error){
     let detail = error.message || 'error desconocido';
     try{ if(error.context && error.context.json){ const j = await error.context.json(); if(j && j.message) detail = j.message; } }catch(e){}
