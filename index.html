@@ -96,7 +96,7 @@ body{
   padding:8px 9px; border-radius:5px; font-family:inherit; font-size:13px;
 }
 .field textarea{resize:vertical; min-height:70px; line-height:1.5;}
-.field input:focus, .field textarea:focus, .field select:focus{outline:none; border-color:var(--steel);}
+.field input:focus, .field textarea:focus, .field select:focus{outline:none; border-color:var(--steel); box-shadow:0 0 0 2px rgba(111,147,173,.45);}
 .row2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
 .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
 .hint{font-size:11px; color:var(--text-faint); margin-top:3px; line-height:1.4;}
@@ -481,6 +481,8 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
       <div class="home-toolbar">
         <button class="btn btn-primary" id="btn-nuevo-proyecto">+ Nuevo proyecto</button>
         <button class="btn" id="btn-nuevo-informe-ctx" style="display:none;">+ Nuevo informe</button>
+        <button class="btn btn-icon" id="btn-editar-proyecto" style="display:none;">✎ Editar proyecto</button>
+        <button class="btn btn-icon" id="btn-eliminar-proyecto" style="display:none; color:var(--danger);">🗑 Eliminar proyecto</button>
         <div class="topbar-spacer"></div>
         <button class="btn btn-ghost" id="btn-modo-local">Continuar sin nube →</button>
       </div>
@@ -491,7 +493,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 
   <div id="um-modal" class="um-overlay">
     <div class="um-box">
-      <div class="um-head"><b>Gestionar usuarios</b><button class="btn-ghost" id="um-close">✕</button></div>
+      <div class="um-head"><b>Gestionar usuarios</b><button class="btn-ghost" id="um-close" aria-label="Cerrar">✕</button></div>
       <div class="hint" style="margin-bottom:10px;">Cualquiera con acceso a este enlace puede crear su cuenta pidiendo un enlace de acceso; aquí les asignas su rol.</div>
       <div id="um-current" class="um-results"></div>
     </div>
@@ -499,7 +501,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 
   <div id="import-modal" class="um-overlay">
     <div class="um-box">
-      <div class="um-head"><b id="import-title">Importar datos</b><button class="btn-ghost" id="import-close">✕</button></div>
+      <div class="um-head"><b id="import-title">Importar datos</b><button class="btn-ghost" id="import-close" aria-label="Cerrar">✕</button></div>
       <div class="hint" id="import-hint" style="margin-bottom:8px;"></div>
       <details style="margin-bottom:10px;">
         <summary style="cursor:pointer; font-size:11.5px; color:var(--steel); user-select:none;">📋 Ver / copiar el prompt sugerido para pedírselo a la IA</summary>
@@ -511,9 +513,24 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
     </div>
   </div>
 
+  <div id="proyecto-edit-modal" class="um-overlay">
+    <div class="um-box" style="width:380px;">
+      <div class="um-head"><b>Editar proyecto</b><button class="btn-ghost" id="pe-close" aria-label="Cerrar">✕</button></div>
+      <div class="field"><label>Nombre del proyecto</label><input type="text" id="pe-nombre"></div>
+      <div class="field"><label>Cliente</label><input type="text" id="pe-cliente"></div>
+      <div class="field"><label>Ubicación</label><input type="text" id="pe-ubicacion"></div>
+      <div class="row2">
+        <div class="field"><label>Contratista</label><input type="text" id="pe-contratista"></div>
+        <div class="field"><label>Interventor</label><input type="text" id="pe-interventor"></div>
+      </div>
+      <div class="field"><label>N.º de contrato / referencia</label><input type="text" id="pe-contrato"></div>
+      <button class="btn btn-primary" id="pe-guardar" style="width:100%; justify-content:center;">Guardar cambios</button>
+    </div>
+  </div>
+
   <div id="screen-editor" style="display:none;">
   <div id="topbar">
-    <button class="btn btn-icon" id="btn-ir-home" title="Volver a proyectos">🏠</button>
+    <button class="btn btn-icon" id="btn-ir-home" title="Volver a proyectos" aria-label="Volver a proyectos">🏠</button>
     <div class="proj-nav">
       <button class="proj-nav-btn" id="btn-proj-nav">
         <span id="pn-proyecto">Sin proyecto</span> <span class="sep">·</span> <span id="pn-informe">—</span> <span class="chev">▾</span>
@@ -1022,6 +1039,8 @@ async function showHomeProyectos(){
   session.homeView='proyectos'; session.proyectoActual=null;
   renderBreadcrumb();
   document.getElementById('btn-nuevo-informe-ctx').style.display='none';
+  document.getElementById('btn-editar-proyecto').style.display='none';
+  document.getElementById('btn-eliminar-proyecto').style.display='none';
   const list = document.getElementById('home-list'), empty = document.getElementById('home-empty');
   list.innerHTML=''; empty.style.display='none';
   if(!session.cloudOn){
@@ -1051,6 +1070,8 @@ async function showHomeInformes(proyecto){
   session.homeView='informes'; session.proyectoActual=proyecto;
   renderBreadcrumb();
   document.getElementById('btn-nuevo-informe-ctx').style.display='inline-flex';
+  document.getElementById('btn-editar-proyecto').style.display='inline-flex';
+  document.getElementById('btn-eliminar-proyecto').style.display = session.role==='admin' ? 'inline-flex' : 'none';
   const list = document.getElementById('home-list'), empty = document.getElementById('home-empty');
   list.innerHTML = '<div style="color:var(--text-faint); font-size:12.5px;">Cargando informes…</div>'; empty.style.display='none';
   const informes = await cargarInformes(proyecto.id);
@@ -1079,6 +1100,62 @@ async function showHomeInformes(proyecto){
     list.appendChild(el);
   });
 }
+document.getElementById('btn-editar-proyecto').addEventListener('click', ()=>{
+  const p = session.proyectoActual; if(!p) return;
+  document.getElementById('pe-nombre').value = p.nombre||'';
+  document.getElementById('pe-cliente').value = p.cliente||'';
+  document.getElementById('pe-ubicacion').value = p.ubicacion||'';
+  document.getElementById('pe-contratista').value = p.contratista||'';
+  document.getElementById('pe-interventor').value = p.interventor||'';
+  document.getElementById('pe-contrato').value = p.contrato||'';
+  document.getElementById('proyecto-edit-modal').classList.add('show');
+});
+document.getElementById('pe-close').addEventListener('click', ()=>document.getElementById('proyecto-edit-modal').classList.remove('show'));
+document.getElementById('pe-guardar').addEventListener('click', async ()=>{
+  const p = session.proyectoActual; if(!p) return;
+  const cambios = {
+    nombre: document.getElementById('pe-nombre').value.trim() || p.nombre,
+    cliente: document.getElementById('pe-cliente').value.trim(),
+    ubicacion: document.getElementById('pe-ubicacion').value.trim(),
+    contratista: document.getElementById('pe-contratista').value.trim(),
+    interventor: document.getElementById('pe-interventor').value.trim(),
+    contrato: document.getElementById('pe-contrato').value.trim(),
+  };
+  try{
+    const { error } = await sb.from('proyectos').update(cambios).eq('id', p.id);
+    if(error) throw error;
+    Object.assign(p, cambios);
+    document.getElementById('proyecto-edit-modal').classList.remove('show');
+    renderBreadcrumb();
+    showToast('Proyecto actualizado');
+  }catch(e){ showToast('No se pudo guardar: '+((e&&e.message)||''), true); }
+});
+document.getElementById('btn-eliminar-proyecto').addEventListener('click', eliminarProyecto);
+async function eliminarProyecto(){
+  const proyecto = session.proyectoActual; if(!proyecto) return;
+  if(!confirm(`¿Eliminar el proyecto «${proyecto.nombre||'sin nombre'}» y TODOS sus informes? Esta acción no se puede deshacer.`)) return;
+  try{
+    const { data: informes } = await sb.from('informes').select('id, data').eq('proyecto_id', proyecto.id);
+    try{
+      const paths = [];
+      (informes||[]).forEach(inf=>{
+        const d = inf.data;
+        if(d){
+          (d.fotos||[]).forEach(f=>{ if(f.assetId) paths.push(f.assetId); });
+          if(d.membreteAssetId) paths.push(d.membreteAssetId);
+        }
+      });
+      if(paths.length) await sb.storage.from(MEDIA_BUCKET).remove(paths);
+    }catch(e){ /* si falla el borrado de archivos, igual continuamos */ }
+    const { error } = await sb.from('proyectos').delete().eq('id', proyecto.id);
+    if(error) throw error;
+    showToast('Proyecto eliminado');
+    await showHomeProyectos();
+  }catch(e){
+    showToast('No se pudo eliminar el proyecto: '+((e&&e.message)||''), true);
+  }
+}
+
 async function eliminarInforme(proyecto, inf){
   const etiqueta = (inf.numero||'este informe') + (inf.fechaEmision? ' — '+fmtFecha(inf.fechaEmision):'');
   if(!confirm(`¿Eliminar ${etiqueta}? Esta acción no se puede deshacer, incluidas sus fotos.`)) return;
@@ -1836,7 +1913,7 @@ function renderFotoList(){
   state.fotos.forEach((f,idx)=>{
     const card = document.createElement('div'); card.className='foto-card';
     card.innerHTML = `
-      <img src="${fotoSrc(f)}">
+      <img src="${fotoSrc(f)}" alt="Miniatura de la fotografía ${idx+1}">
       <div class="foto-fields">
         <input type="text" placeholder="Ubicación / zona" value="${esc(f.ubicacion)}" data-k="ubicacion">
         <input type="text" placeholder="Descripción" value="${esc(f.desc)}" data-k="desc">
@@ -2120,14 +2197,14 @@ function contentPadStyle(){
   return `padding:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm;`;
 }
 function membreteHTML(){
-  return state.membrete ? `<img class="bg-membrete" src="${state.membrete}">` : '';
+  return state.membrete ? `<img class="bg-membrete" src="${state.membrete}" alt="">` : '';
 }
 
 function mapaBlockHTML(){
   const p = state.proyecto;
   if(!p.mapLat && p.mapLat!==0) return '';
   const img = p.mapSnapshot
-    ? `<img class="mapa-img" src="${p.mapSnapshot}">`
+    ? `<img class="mapa-img" src="${p.mapSnapshot}" alt="Mapa de ubicación del proyecto">`
     : `<div class="mapa-placeholder">Generando vista del mapa…</div>`;
   return `<div class="mapa-proyecto">${img}${p.mapDireccion? `<div class="mapa-direccion">${esc(p.mapDireccion)}</div>`:''}</div>`;
 }
@@ -2258,7 +2335,7 @@ function buildFotoPage(grupo, folio, indexBase, pageNo, totalPages){
   const n = state.fotosPorHoja;
   const items = grupo.map(f=>`
     <div class="foto-item">
-      <div class="ph"><img src="${fotoSrc(f)}"></div>
+      <div class="ph"><img src="${fotoSrc(f)}" alt="${esc(f.ubicacion||f.desc||'Fotografía del avance de obra')}"></div>
       <div class="cap"><b>${esc(f.ubicacion)||'Sin ubicación'}</b>${f.fecha? ' · '+fmtFecha(f.fecha):''}${f.desc? '<br>'+esc(f.desc):''}</div>
     </div>`).join('');
   return `
@@ -2512,6 +2589,15 @@ function showModal(text){ document.getElementById('export-modal-text').textConte
 function hideModal(){ document.getElementById('export-modal').classList.remove('show'); }
 
 /* ============================= INICIO ============================= */
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  ['um-modal','import-modal','proyecto-edit-modal'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && el.classList.contains('show')) el.classList.remove('show');
+  });
+  const menu = document.getElementById('proj-nav-menu');
+  if(menu) menu.classList.remove('show');
+});
 (async function init(){
   await initSession();
 })();
