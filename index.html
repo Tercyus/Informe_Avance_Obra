@@ -1045,13 +1045,46 @@ async function showHomeInformes(proyecto){
   }
   informes.forEach(inf=>{
     const el = document.createElement('div'); el.className='informe-row';
+    const puedeEliminar = inf.autorId===session.userId || session.role==='admin';
     el.innerHTML = `<div class="ir-num">${esc(inf.numero)||'—'}</div>
       <div class="ir-body"><div class="ir-title">${fmtFecha(inf.fechaEmision)} — ${esc(inf.autorNombre)||'—'}</div>
       <div class="ir-sub">Actualizado ${fmtFechaHora(inf.actualizadoEn)}</div></div>
-      <span class="estado-badge ${inf.estado||'borrador'}">${ESTADO_LABEL[inf.estado]||'Borrador'}</span>`;
+      <span class="estado-badge ${inf.estado||'borrador'}">${ESTADO_LABEL[inf.estado]||'Borrador'}</span>
+      ${puedeEliminar ? `<button class="btn-danger-ghost ir-del" title="Eliminar informe">✕</button>` : ''}`;
     el.addEventListener('click', ()=>abrirInformeCloud(proyecto, inf));
+    if(puedeEliminar){
+      el.querySelector('.ir-del').addEventListener('click', ev=>{
+        ev.stopPropagation();
+        eliminarInforme(proyecto, inf);
+      });
+    }
     list.appendChild(el);
   });
+}
+async function eliminarInforme(proyecto, inf){
+  const etiqueta = (inf.numero||'este informe') + (inf.fechaEmision? ' — '+fmtFecha(inf.fechaEmision):'');
+  if(!confirm(`¿Eliminar ${etiqueta}? Esta acción no se puede deshacer, incluidas sus fotos.`)) return;
+  try{
+    // borrado best-effort de las fotos y el membrete guardados en Storage para este informe
+    try{
+      const { data: fila } = await sb.from('informes').select('data').eq('id', inf.id).single();
+      const d = fila && fila.data;
+      if(d){
+        const paths = [
+          ...(d.fotos||[]).map(f=>f.assetId).filter(Boolean),
+          d.membreteAssetId
+        ].filter(Boolean);
+        if(paths.length) await sb.storage.from(MEDIA_BUCKET).remove(paths);
+      }
+    }catch(e){ /* si falla el borrado de archivos, igual continuamos con el informe */ }
+
+    const { error } = await sb.from('informes').delete().eq('id', inf.id);
+    if(error) throw error;
+    showToast('Informe eliminado');
+    await showHomeInformes(proyecto);
+  }catch(e){
+    showToast('No se pudo eliminar: '+((e&&e.message)||'error desconocido'), true);
+  }
 }
 document.getElementById('btn-nuevo-proyecto').addEventListener('click', async ()=>{
   if(!session.cloudOn){ showToast('Inicia sesión primero.', true); return; }
