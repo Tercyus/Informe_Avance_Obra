@@ -528,7 +528,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
     </div>
   </div>
 
-  <div id="screen-editor" style="display:none;">
+  <div id="screen-editor" style="display:none; flex-direction:column; height:100%;">
   <div id="topbar">
     <button class="btn btn-icon" id="btn-ir-home" title="Volver a proyectos" aria-label="Volver a proyectos">🏠</button>
     <div class="proj-nav">
@@ -1435,7 +1435,7 @@ async function renderUMCurrent(){
 /* ---- entrar / salir del editor ---- */
 function enterEditor(){
   document.getElementById('screen-home').style.display='none';
-  document.getElementById('screen-editor').style.display='block';
+  document.getElementById('screen-editor').style.display='flex';
   hydrateForm();
   document.getElementById('canvas').style.transform = 'scale('+document.getElementById('sel-zoom').value+')';
   render(document.getElementById('canvas'));
