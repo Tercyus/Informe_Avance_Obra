@@ -479,6 +479,20 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
     </div>
   </div>
 
+  <div id="import-modal" class="um-overlay">
+    <div class="um-box">
+      <div class="um-head"><b id="import-title">Importar datos</b><button class="btn-ghost" id="import-close">✕</button></div>
+      <div class="hint" id="import-hint" style="margin-bottom:8px;"></div>
+      <details style="margin-bottom:10px;">
+        <summary style="cursor:pointer; font-size:11.5px; color:var(--steel); user-select:none;">📋 Ver / copiar el prompt sugerido para pedírselo a la IA</summary>
+        <textarea id="import-prompt-guide" readonly style="width:100%; min-height:160px; background:var(--panel-3); border:1px solid var(--hairline); color:var(--text-dim); border-radius:6px; padding:8px; font-family:'IBM Plex Mono',monospace; font-size:10px; margin-top:7px; resize:vertical;"></textarea>
+        <button class="btn btn-icon" id="btn-copiar-prompt" style="margin-top:6px; width:100%; justify-content:center;">Copiar prompt</button>
+      </details>
+      <textarea id="import-textarea" placeholder="Pega aquí la respuesta de la IA…" style="width:100%; min-height:140px; background:var(--panel-3); border:1px solid var(--hairline); color:var(--text); border-radius:6px; padding:9px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; resize:vertical;"></textarea>
+      <button class="btn btn-primary" id="import-confirm" style="width:100%; justify-content:center; margin-top:10px;">Importar</button>
+    </div>
+  </div>
+
   <div id="screen-editor" style="display:none;">
   <div id="topbar">
     <button class="btn btn-icon" id="btn-ir-home" title="Volver a proyectos">🏠</button>
@@ -586,6 +600,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
         <div class="section-body">
           <div class="hint" style="margin-bottom:9px;">Registra las actividades con su rango de fechas, su peso dentro del proyecto (%) y su avance individual (%). El peso no tiene que sumar exactamente 100 — se normaliza automáticamente.</div>
           <button class="btn-ai" id="btn-ai-cronograma">📷 Reconocer cronograma con IA (foto o captura)</button>
+          <button class="upload-btn" id="btn-import-cronograma">📋 Importar desde Claude (pegar texto)</button>
           <input type="file" id="file-crono-img" accept="image/*" style="display:none;">
           <button class="upload-btn" id="btn-add-actividad">+ Agregar actividad</button>
           <div id="crono-list"></div>
@@ -640,6 +655,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
         <div class="section-body">
           <button class="btn-ai" id="btn-ai-resumen">✨ Generar borrador con IA</button>
           <button class="upload-btn" id="btn-plantilla-resumen">🧩 Generar por plantilla (sin IA)</button>
+          <button class="upload-btn" id="btn-import-resumen">📋 Importar desde Claude (pegar texto)</button>
           <div class="hint" style="margin-bottom:9px;">La IA redacta con lenguaje natural; la plantilla arma frases fijas con tus datos, al instante y sin costo. Luego edita libremente: agrega, quita o reordena cada punto.</div>
           <div id="resumen-list"></div>
           <button class="upload-btn" id="btn-add-item-resumen">+ Agregar punto</button>
@@ -1526,6 +1542,124 @@ async function llamarIA(tipo, extra){
   if(data && data.error) throw new Error(data.message || data.error);
   return data.text;
 }
+
+/* ---- importar datos generados por Claude u otra IA externa (sin API key) ---- */
+let importTarget = null;
+function promptGuiaCronograma(){
+  const p = state.proyecto, i = state.informe;
+  return `Actúa como un ingeniero residente de obra en Colombia. Voy a describirte las actividades del proyecto y quiero que las organices en un cronograma. Responde ÚNICAMENTE con un objeto JSON válido, sin texto antes ni después, con esta forma exacta:
+
+{"actividades":[{"actividad":"nombre corto","inicio":"YYYY-MM-DD","fin":"YYYY-MM-DD","peso":numero_0_a_100,"avance":numero_0_a_100}]}
+
+Reglas:
+- Fechas en formato ISO YYYY-MM-DD. Si no tengo una fecha exacta, estímala de forma razonable según el orden lógico de las actividades.
+- "peso" es qué tan grande es esa actividad dentro del proyecto completo (en % del total, deben poder sumar cerca de 100 entre todas).
+- "avance" es el % de esa actividad puntual que ya está ejecutado.
+- No agregues explicaciones, notas ni texto fuera del JSON.
+
+Estos son los datos del proyecto:
+- Nombre: ${p.nombre || '[nombre del proyecto]'}
+- Período del informe: ${i.desde? fmtFecha(i.desde):'[fecha inicio]'} a ${i.hasta? fmtFecha(i.hasta):'[fecha fin]'}
+- Actividades: [descríbelas aquí como puedas — fechas, % de avance, orden; puede ser desordenado, tú organízalo]`;
+}
+function promptGuiaResumen(){
+  const p = state.proyecto, i = state.informe;
+  const actividadesTxt = state.cronograma.length
+    ? state.cronograma.filter(a=>a.actividad).map(a=>`- ${a.actividad}: ${a.avance||0}% de avance (peso ${a.peso||0}%)`).join('\n')
+    : '[pega aquí la lista, o escribe "no tengo cronograma cargado"]';
+  const fotosTxt = state.fotos.length
+    ? state.fotos.slice(0,12).map(f=>`- ${f.ubicacion||'zona sin especificar'}${f.desc? ': '+f.desc:''}`).join('\n')
+    : '[aún no hay fotos registradas]';
+  return `Actúa como un arquitecto/ingeniero residente redactando el resumen ejecutivo de un informe técnico de avance de obra en Colombia. Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, con esta forma:
+
+{"items":["frase 1","frase 2","frase 3"]}
+
+Reglas:
+- Entre 4 y 7 frases breves, en tono técnico-profesional, tercera persona, sin adjetivos exagerados.
+- Cada frase debe cubrir un aspecto distinto: avance general, actividades ejecutadas en el período, hitos o hallazgos relevantes, y estado frente al cronograma.
+- No inventes cifras ni actividades que no te haya dado.
+
+Estos son los datos del proyecto:
+- Nombre: ${p.nombre || '[nombre del proyecto]'}
+- Cliente: ${p.cliente || '[cliente]'}
+- Ubicación: ${p.ubicacion || '[ubicación]'}
+- Período del informe: ${i.desde? fmtFecha(i.desde):'[fecha inicio]'} a ${i.hasta? fmtFecha(i.hasta):'[fecha fin]'}
+- Avance general: ${i.avance||0}%
+- Actividades del cronograma:
+${actividadesTxt}
+- Observaciones: ${i.observaciones || '[novedades, retrasos, hallazgos — o "ninguna"]'}
+- Fotos registradas:
+${fotosTxt}`;
+}
+document.getElementById('btn-copiar-prompt').addEventListener('click', async ()=>{
+  const ta = document.getElementById('import-prompt-guide');
+  try{
+    await navigator.clipboard.writeText(ta.value);
+    showToast('Prompt copiado — pégalo en tu IA de preferencia');
+  }catch(e){
+    ta.select();
+    showToast('Selecciona y copia el texto manualmente (Ctrl/Cmd+C)', true);
+  }
+});
+function openImportModal(target){
+  importTarget = target;
+  const modal = document.getElementById('import-modal');
+  const title = document.getElementById('import-title');
+  const hint = document.getElementById('import-hint');
+  document.getElementById('import-textarea').value = '';
+  if(target==='cronograma'){
+    title.textContent = 'Importar cronograma';
+    hint.innerHTML = 'Pídele a Claude (o a la IA que ya uses) el cronograma de esta obra en este formato exacto, y pega la respuesta aquí:<br><code style="font-size:10px; color:var(--accent);">{"actividades":[{"actividad":"Cimentación","inicio":"2026-01-05","fin":"2026-02-10","peso":20,"avance":60}]}</code>';
+    document.getElementById('import-prompt-guide').value = promptGuiaCronograma();
+  }else{
+    title.textContent = 'Importar resumen ejecutivo';
+    hint.textContent = 'Pega aquí el resumen que te haya redactado Claude u otra IA: una frase por línea, o un JSON {"items":["frase 1","frase 2"]}.';
+    document.getElementById('import-prompt-guide').value = promptGuiaResumen();
+  }
+  modal.classList.add('show');
+  document.getElementById('import-textarea').focus();
+}
+document.getElementById('btn-import-cronograma').addEventListener('click', ()=>openImportModal('cronograma'));
+document.getElementById('btn-import-resumen').addEventListener('click', ()=>openImportModal('resumen'));
+document.getElementById('import-close').addEventListener('click', ()=>document.getElementById('import-modal').classList.remove('show'));
+document.getElementById('import-confirm').addEventListener('click', ()=>{
+  const raw = document.getElementById('import-textarea').value.trim();
+  if(!raw){ showToast('Pega algo primero.', true); return; }
+  try{
+    if(importTarget==='cronograma'){
+      const data = parseJSONLoose(raw);
+      const acts = Array.isArray(data) ? data : (data.actividades||[]);
+      if(!acts.length) throw new Error('No encontré actividades en ese texto.');
+      if(state.cronograma.length && !confirm('Ya hay actividades cargadas. ¿Agregar estas al final?')){ return; }
+      acts.forEach(a=>{
+        state.cronograma.push({
+          id:nextActividadId++, actividad:String(a.actividad||a.nombre||'').slice(0,140),
+          inicio:/^\d{4}-\d{2}-\d{2}$/.test(a.inicio)?a.inicio:'', fin:/^\d{4}-\d{2}-\d{2}$/.test(a.fin)?a.fin:'',
+          peso:Math.max(0,Math.min(100,Number(a.peso)||0)), avance:Math.max(0,Math.min(100,Number(a.avance)||0))
+        });
+      });
+      renderCronoList(); onCronogramaChanged();
+      showToast(acts.length+' actividad(es) importadas');
+    }else{
+      let items;
+      if(raw.startsWith('{') || raw.startsWith('[')){
+        const data = parseJSONLoose(raw);
+        items = Array.isArray(data) ? data : (data.items||[]);
+      }else{
+        items = raw.split('\n').map(l=>l.replace(/^[-•*\d.\)\s]+/,'').trim()).filter(Boolean);
+      }
+      items = (items||[]).filter(s=>typeof s==='string' && s.trim());
+      if(!items.length) throw new Error('No encontré texto para importar.');
+      if(state.resumenItems.length && !confirm('Ya hay puntos escritos. ¿Agregar estos al final?')){ return; }
+      state.resumenItems.push(...items);
+      renderResumenList(); scheduleRender(); scheduleSave();
+      showToast(items.length+' punto(s) importados');
+    }
+    document.getElementById('import-modal').classList.remove('show');
+  }catch(e){
+    showToast('No se pudo importar: '+(e.message||'formato no reconocido'), true);
+  }
+});
 document.getElementById('file-membrete').addEventListener('change', async e=>{
   const file = e.target.files[0]; if(!file) return;
   const dataUrl = await compressImage(file, 2000, 0.9);
