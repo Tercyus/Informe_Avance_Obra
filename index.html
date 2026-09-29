@@ -189,6 +189,17 @@ body{
 .crono-card .row4 input{margin-bottom:0;}
 .crono-total{font-size:11.5px; color:var(--text-dim); text-align:right; margin:2px 0 10px;}
 .crono-total b{color:var(--accent); font-family:"IBM Plex Mono",monospace;}
+.estado-chip{
+  font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; padding:3px 8px; border-radius:20px;
+  font-family:"IBM Plex Mono",monospace; white-space:nowrap;
+}
+.estado-chip.verde{background:#1f3a29; color:#7fc494;}
+.estado-chip.ambar{background:#4a3a1f; color:#e6a25c;}
+.estado-chip.rojo{background:#3a1f1f; color:#e08a7d;}
+.estado-chip.neutro{background:#3a424d; color:var(--text-faint);}
+.avance-slider-row{display:flex; align-items:center; gap:8px;}
+.avance-slider{flex:1; accent-color:var(--accent);}
+.avance-slider-val{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--accent); width:34px; text-align:right; flex:0 0 auto;}
 
 /* version table */
 table.vt{width:100%; border-collapse:collapse; font-size:11.5px;}
@@ -263,8 +274,15 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 .gantt-track{position:relative; height:3mm; background:var(--paper-line); border-radius:1mm; width:100%; min-width:26mm;}
 .gantt-fill-bg{position:absolute; top:0; bottom:0; background:#d8c9b3; border-radius:1mm;}
 .gantt-fill{position:absolute; top:0; bottom:0; background:var(--accent); border-radius:1mm;}
-.crono-resumen{display:flex; gap:8mm; font-size:calc(var(--doc-fs)*0.86); color:var(--ink-dim); margin-bottom:4mm;}
+.crono-resumen{display:flex; gap:8mm; align-items:center; font-size:calc(var(--doc-fs)*0.86); color:var(--ink-dim); margin-bottom:4mm;}
 .crono-resumen b{color:var(--ink);}
+.estado-chip-print{
+  font-size:7.5pt; font-weight:700; text-transform:uppercase; letter-spacing:.03em; padding:1mm 2.4mm; border-radius:3mm; white-space:nowrap;
+}
+.estado-chip-print.verde{background:#dcefe0; color:#2b6b3f;}
+.estado-chip-print.ambar{background:#f7e7d0; color:#8a5a1f;}
+.estado-chip-print.rojo{background:#f6dbd6; color:#963527;}
+.estado-chip-print.neutro{background:#eeece4; color:#8a8578;}
 
 /* firmas */
 .firmas-row{display:flex; gap:14mm; margin-top:auto; padding-top:10mm;}
@@ -599,9 +617,9 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
         <summary><span class="num">03</span> Cronograma de obra</summary>
         <div class="section-body">
           <div class="hint" style="margin-bottom:9px;">Registra las actividades con su rango de fechas, su peso dentro del proyecto (%) y su avance individual (%). El peso no tiene que sumar exactamente 100 — se normaliza automáticamente.</div>
-          <button class="btn-ai" id="btn-ai-cronograma">📷 Reconocer cronograma con IA (foto o captura)</button>
+          <button class="btn-ai" id="btn-ai-cronograma">📷 Reconocer cronograma con IA (foto, PDF o captura)</button>
           <button class="upload-btn" id="btn-import-cronograma">📋 Importar desde Claude (pegar texto)</button>
-          <input type="file" id="file-crono-img" accept="image/*" style="display:none;">
+          <input type="file" id="file-crono-img" accept="image/*,application/pdf" style="display:none;">
           <button class="upload-btn" id="btn-add-actividad">+ Agregar actividad</button>
           <div id="crono-list"></div>
           <div class="crono-total" id="crono-total"></div>
@@ -964,7 +982,7 @@ function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>
 /* ============================= PANTALLA DE INICIO: PROYECTOS E INFORMES ============================= */
 function proyectoFromRow(r){
   return { id:r.id, nombre:r.nombre, cliente:r.cliente, ubicacion:r.ubicacion, contratista:r.contratista,
-    interventor:r.interventor, contrato:r.contrato, creadoPor:r.creado_por, actualizadoEn:r.updated_at, creadoEn:r.created_at };
+    interventor:r.interventor, contrato:r.contrato, cronograma:r.cronograma||[], creadoPor:r.creado_por, actualizadoEn:r.updated_at, creadoEn:r.created_at };
 }
 function informeFromRow(r){
   return { id:r.id, proyectoId:r.proyecto_id, numero:r.numero, fechaEmision:r.fecha_emision, estado:r.estado,
@@ -1101,6 +1119,17 @@ document.getElementById('btn-nuevo-proyecto').addEventListener('click', async ()
 document.getElementById('btn-nuevo-informe-ctx').addEventListener('click', ()=>{
   if(session.proyectoActual) crearInformeParaProyecto(session.proyectoActual);
 });
+function mergeCronograma(baseline, avancesMap){
+  return (baseline||[]).map(act => ({ ...act, avance: (avancesMap && avancesMap[act.id]!=null) ? Number(avancesMap[act.id]) : 0 }));
+}
+function baselineFromCronograma(cronograma){
+  return (cronograma||[]).map(({id,actividad,inicio,fin,peso})=>({id,actividad,inicio,fin,peso}));
+}
+function avancesMapFromCronograma(cronograma){
+  const m = {};
+  (cronograma||[]).forEach(a=>{ m[a.id] = Number(a.avance)||0; });
+  return m;
+}
 async function crearInformeParaProyecto(proyecto){
   try{
     const numero = 'INF-'+String((session.informesCacheActual?session.informesCacheActual.length:0)+1).padStart(3,'0');
@@ -1115,7 +1144,19 @@ async function crearInformeParaProyecto(proyecto){
 async function abrirInformeCloud(proyecto, informeDoc){
   session.proyectoActual = proyecto; session.informeActual = informeDoc;
   resetStateToDefaults();
-  if(informeDoc.data) applyCloudData(informeDoc.data);
+  if(informeDoc.data){
+    applyCloudData(informeDoc.data);
+  }else{
+    // informe nuevo: parte del cronograma base del proyecto, heredando el avance del último informe (si hay)
+    let avancesPrevios = {};
+    try{
+      const { data: prev } = await sb.from('informes').select('data').eq('proyecto_id', proyecto.id)
+        .order('created_at', { ascending:false }).limit(1).maybeSingle();
+      if(prev && prev.data && prev.data.avancesCronograma) avancesPrevios = prev.data.avancesCronograma;
+    }catch(e){ /* si falla, se parte de 0% */ }
+    state.cronograma = mergeCronograma(proyecto.cronograma, avancesPrevios);
+    nextActividadId = (state.cronograma.reduce((m,a)=>Math.max(m,a.id||0),0))+1;
+  }
   state.informe.numero = informeDoc.numero || state.informe.numero;
   state.informe.fecha = state.informe.fecha || informeDoc.fechaEmision;
   state.informe.estado = informeDoc.estado || 'borrador';
@@ -1133,7 +1174,15 @@ function applyCloudData(data){
   state.proyecto.mapSnapshot = null; // se regenera localmente
   state.informe = Object.assign(state.informe, data.informe||{});
   state.resumenItems = data.resumenItems||[];
-  state.cronograma = data.cronograma||[];
+  let avancesMap = data.avancesCronograma;
+  if(!avancesMap && Array.isArray(data.cronograma) && data.cronograma.length){
+    // compatibilidad con informes guardados antes de mover el cronograma al proyecto
+    avancesMap = avancesMapFromCronograma(data.cronograma);
+    if(session.proyectoActual && (!session.proyectoActual.cronograma || !session.proyectoActual.cronograma.length)){
+      session.proyectoActual.cronograma = baselineFromCronograma(data.cronograma);
+    }
+  }
+  state.cronograma = mergeCronograma(session.proyectoActual && session.proyectoActual.cronograma, avancesMap||{});
   state.margenes = data.margenes||state.margenes;
   state.fotosPorHoja = data.fotosPorHoja||state.fotosPorHoja;
   state.tamanoHoja = data.tamanoHoja||state.tamanoHoja;
@@ -1157,7 +1206,7 @@ function cloudPayloadFromState(){
       observaciones:state.informe.observaciones, estado:state.informe.estado, autorId:state.informe.autorId,
       autorNombre:state.informe.autorNombre, comentario:state.informe.comentario },
     resumenItems: state.resumenItems,
-    cronograma: state.cronograma,
+    avancesCronograma: avancesMapFromCronograma(state.cronograma),
     fotos: state.fotos.map(f=>({id:f.id, desc:f.desc, ubicacion:f.ubicacion, fecha:f.fecha, assetId:f.assetId||null, url:f.url||null})),
     membreteAssetId: state.membreteAssetId||null,
     membreteUrl: state.membreteUrl||null,
@@ -1177,13 +1226,16 @@ async function syncCloudNow(){
     if(e1) throw e1;
     session.informeActual.estado = state.informe.estado; session.informeActual.numero = state.informe.numero;
     if(session.proyectoActual){
+      const baseline = baselineFromCronograma(state.cronograma);
       const { error: e2 } = await sb.from('proyectos').update({
         nombre: state.proyecto.nombre||session.proyectoActual.nombre, cliente: state.proyecto.cliente,
         ubicacion: state.proyecto.ubicacion, contratista: state.proyecto.contratista,
-        interventor: state.proyecto.interventor, contrato: state.proyecto.contrato
+        interventor: state.proyecto.interventor, contrato: state.proyecto.contrato,
+        cronograma: baseline
       }).eq('id', session.proyectoActual.id);
       if(e2) throw e2;
       session.proyectoActual.nombre = state.proyecto.nombre;
+      session.proyectoActual.cronograma = baseline;
     }
   }catch(e){
     showToast('No se pudo sincronizar con la nube: '+((e&&e.message)||''), true);
@@ -1382,6 +1434,7 @@ function applyDocFont(){
 ['i-numero','i-fecha','i-desde','i-hasta','i-elabora','i-cargo'].forEach(id=>{
   bindText(id, 'informe.'+id.slice(2));
 });
+document.getElementById('i-fecha').addEventListener('input', ()=>{ if(state.cronograma.length) renderCronoList(); });
 document.getElementById('i-avance').addEventListener('input', e=>{
   state.informe.avance = Number(e.target.value);
   document.getElementById('avance-val').textContent = state.informe.avance+'%';
@@ -1401,6 +1454,44 @@ function toggleAvanceAuto(recalc){
     document.getElementById('avance-auto-val').textContent = val+'%';
     if(recalc){ state.informe.avance = val; }
   }
+}
+const ESTADO_CRONO_LABEL = { verde:'Adelantado', ambar:'A tiempo', rojo:'Atrasado', neutro:'Sin fechas' };
+function fechaReferenciaCronograma(){
+  return state.informe.fecha || new Date().toISOString().slice(0,10);
+}
+function avanceEsperado(act, fechaRef){
+  if(!act.inicio || !act.fin) return null;
+  const ini = new Date(act.inicio+'T00:00:00'), fin = new Date(act.fin+'T00:00:00'), ref = new Date(fechaRef+'T00:00:00');
+  if(fin<=ini) return null;
+  if(ref<=ini) return 0;
+  if(ref>=fin) return 100;
+  return ((ref-ini)/(fin-ini))*100;
+}
+function estadoActividad(act, fechaRef){
+  const esperado = avanceEsperado(act, fechaRef);
+  if(esperado==null) return { label:ESTADO_CRONO_LABEL.neutro, cls:'neutro' };
+  const dif = (Number(act.avance)||0) - esperado;
+  if(dif>=5) return { label:ESTADO_CRONO_LABEL.verde, cls:'verde', dif };
+  if(dif<=-5) return { label:ESTADO_CRONO_LABEL.rojo, cls:'rojo', dif };
+  return { label:ESTADO_CRONO_LABEL.ambar, cls:'ambar', dif };
+}
+function estadoGeneralProyecto(){
+  const fechaRef = fechaReferenciaCronograma();
+  const acts = state.cronograma.filter(a=>a.actividad && a.actividad.trim() && a.inicio && a.fin);
+  if(!acts.length) return null;
+  let sumaPeso=0, sumaDif=0;
+  acts.forEach(a=>{
+    const esperado = avanceEsperado(a, fechaRef);
+    if(esperado==null) return;
+    const peso = Number(a.peso)||0;
+    sumaPeso += peso;
+    sumaDif += peso*((Number(a.avance)||0)-esperado);
+  });
+  if(sumaPeso<=0) return null;
+  const dif = sumaDif/sumaPeso;
+  if(dif>=5) return { label:ESTADO_CRONO_LABEL.verde, cls:'verde', dif };
+  if(dif<=-5) return { label:ESTADO_CRONO_LABEL.rojo, cls:'rojo', dif };
+  return { label:ESTADO_CRONO_LABEL.ambar, cls:'ambar', dif };
 }
 function computeAvanceFromCronograma(){
   const acts = state.cronograma.filter(a=>a.peso>0);
@@ -1804,24 +1895,36 @@ function onCronogramaChanged(){
 function renderCronoList(){
   const wrap = document.getElementById('crono-list');
   wrap.innerHTML = '';
+  const fechaRef = fechaReferenciaCronograma();
   state.cronograma.forEach((a,idx)=>{
     const card = document.createElement('div'); card.className='crono-card';
+    const est = estadoActividad(a, fechaRef);
     card.innerHTML = `
       <input type="text" placeholder="Actividad — ej. Cimentación" value="${esc(a.actividad)}" data-k="actividad">
       <div class="row2">
         <input type="date" value="${a.inicio||''}" data-k="inicio" title="Inicio">
         <input type="date" value="${a.fin||''}" data-k="fin" title="Fin">
       </div>
-      <div class="row4">
+      <div class="row2" style="align-items:center;">
         <input type="number" min="0" max="100" placeholder="Peso %" value="${a.peso}" data-k="peso" title="Peso dentro del proyecto (%)">
-        <input type="number" min="0" max="100" placeholder="Avance %" value="${a.avance}" data-k="avance" title="Avance de la actividad (%)">
-        <span style="font-size:11px; color:var(--text-faint);">peso / avance</span>
+        <span class="estado-chip ${est.cls}">${est.label}</span>
+      </div>
+      <div class="avance-slider-row">
+        <input type="range" min="0" max="100" value="${a.avance}" data-k="avance" class="avance-slider">
+        <span class="avance-slider-val">${a.avance}%</span>
         <button class="btn-danger-ghost" title="Eliminar actividad" data-a="del">✕</button>
       </div>`;
-    card.querySelectorAll('input').forEach(inp=>{
-      inp.addEventListener('input', ()=>{
+    card.querySelectorAll('input[data-k]').forEach(inp=>{
+      const ev = inp.type==='range' ? 'input' : 'input';
+      inp.addEventListener(ev, ()=>{
         const k = inp.dataset.k;
         a[k] = (k==='peso'||k==='avance') ? Math.max(0,Math.min(100,Number(inp.value)||0)) : inp.value;
+        if(k==='avance') card.querySelector('.avance-slider-val').textContent = a.avance+'%';
+        if(k==='avance' || k==='inicio' || k==='fin'){
+          const nuevoEst = estadoActividad(a, fechaReferenciaCronograma());
+          const chip = card.querySelector('.estado-chip');
+          chip.className = 'estado-chip '+nuevoEst.cls; chip.textContent = nuevoEst.label;
+        }
         renderCronoTotal(); onCronogramaChanged();
       });
     });
@@ -1837,21 +1940,24 @@ function renderCronoTotal(){
   const el = document.getElementById('crono-total');
   if(!state.cronograma.length){ el.textContent=''; return; }
   const totalPeso = state.cronograma.reduce((s,a)=>s+Number(a.peso||0),0);
-  el.innerHTML = `Peso total: <b>${totalPeso}%</b> &nbsp;·&nbsp; Avance ponderado: <b>${computeAvanceFromCronograma()}%</b>`;
+  const general = estadoGeneralProyecto();
+  el.innerHTML = `Peso total: <b>${totalPeso}%</b> &nbsp;·&nbsp; Avance ponderado: <b>${computeAvanceFromCronograma()}%</b>` +
+    (general ? ` &nbsp;·&nbsp; <span class="estado-chip ${general.cls}">${general.label}</span>` : '');
 }
 
 document.getElementById('btn-ai-cronograma').addEventListener('click', ()=>document.getElementById('file-crono-img').click());
 document.getElementById('file-crono-img').addEventListener('change', async e=>{
   const file = e.target.files[0]; e.target.value=''; if(!file) return;
+  const esPdf = file.type==='application/pdf';
   const btn = document.getElementById('btn-ai-cronograma');
-  btn.disabled=true; const original=btn.textContent; btn.textContent='Analizando imagen…';
+  btn.disabled=true; const original=btn.textContent; btn.textContent = esPdf? 'Analizando PDF…' : 'Analizando imagen…';
   try{
-    const prompt = `Esta imagen muestra un cronograma o programación de obra (puede ser una tabla, un diagrama de Gantt, una hoja de cálculo fotografiada o un documento escaneado). Extrae las actividades que puedas identificar con claridad. Responde ÚNICAMENTE con un objeto JSON con la forma {"actividades": [{"actividad": "string", "inicio": "YYYY-MM-DD o cadena vacía si no es legible", "fin": "YYYY-MM-DD o cadena vacía si no es legible", "peso": number entre 0 y 100 (estimado según duración/importancia si no aparece explícito), "avance": number entre 0 y 100 (usa 0 si no aparece)}]}. No inventes actividades que no estén en la imagen. Si una fecha no tiene año visible, infiérelo del contexto del documento; si no puedes inferirlo, deja el campo vacío. No incluyas texto fuera del JSON.`;
+    const prompt = `Este archivo muestra un cronograma o programación de obra (puede ser una tabla, un diagrama de Gantt, una hoja de cálculo fotografiada, un PDF o un documento escaneado). Extrae las actividades que puedas identificar con claridad. Responde ÚNICAMENTE con un objeto JSON con la forma {"actividades": [{"actividad": "string", "inicio": "YYYY-MM-DD o cadena vacía si no es legible", "fin": "YYYY-MM-DD o cadena vacía si no es legible", "peso": number entre 0 y 100 (estimado según duración/importancia si no aparece explícito), "avance": number entre 0 y 100 (usa 0 si no aparece)}]}. No inventes actividades que no estén en el archivo. Si una fecha no tiene año visible, infiérelo del contexto del documento; si no puedes inferirlo, deja el campo vacío. No incluyas texto fuera del JSON.`;
     const imageBase64 = await fileToBase64(file);
     const text = await llamarIA('cronograma', { prompt, imageBase64, mediaType: file.type||'image/jpeg' });
     const data = parseJSONLoose(text);
     const acts = (data && Array.isArray(data.actividades)) ? data.actividades : [];
-    if(!acts.length) throw new Error('No se pudo identificar actividades en la imagen.');
+    if(!acts.length) throw new Error('No se pudo identificar actividades en el archivo.');
     if(state.cronograma.length && !confirm('Ya hay actividades cargadas. ¿Agregar las '+acts.length+' actividades detectadas al final de la lista?')){
       btn.disabled=false; btn.textContent=original; return;
     }
@@ -2056,7 +2162,7 @@ function buildPortada(pageNo,totalPages){
         <div class="avance-box">
           <div class="avance-num">${i.avance}%</div>
           <div style="flex:1;">
-            <div style="font-size:9pt; color:var(--ink-dim); margin-bottom:2mm;">Avance general del período</div>
+            <div style="font-size:9pt; color:var(--ink-dim); margin-bottom:2mm; display:flex; align-items:center; gap:3mm;">Avance general del período${(()=>{const g=estadoGeneralProyecto(); return g? ` <span class="estado-chip-print ${g.cls}">${g.label}</span>`:'';})()}</div>
             <div class="avance-bar"><div style="width:${i.avance}%;"></div></div>
           </div>
         </div>
@@ -2105,6 +2211,7 @@ function buildResumenPage(folio, pageNo, totalPages){
 const CRONO_FILAS_POR_HOJA = 11;
 function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
   const rango = (maxDate - minDate) || 1;
+  const fechaRef = fechaReferenciaCronograma();
   const rows = grupo.map(a=>{
     const ini = a.inicio ? new Date(a.inicio+'T00:00:00') : null;
     const fin = a.fin ? new Date(a.fin+'T00:00:00') : null;
@@ -2118,23 +2225,27 @@ function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
         <div class="gantt-fill" style="left:${leftPct}%; width:${fillPct}%;"></div>
       </div>`;
     }
+    const est = estadoActividad(a, fechaRef);
     return `<tr>
       <td>${esc(a.actividad)||'—'}</td>
       <td class="num">${fmtFecha(a.inicio)}</td>
       <td class="num">${fmtFecha(a.fin)}</td>
       <td class="num">${a.peso||0}%</td>
       <td class="num">${a.avance||0}%</td>
-      <td style="min-width:26mm;">${bar}</td>
+      <td style="min-width:24mm;">${bar}</td>
+      <td class="num"><span class="estado-chip-print ${est.cls}">${est.label}</span></td>
     </tr>`;
   }).join('');
+  const general = estadoGeneralProyecto();
   return `
   <div class="pagina" style="${pageStyle()}">
     ${membreteHTML()}
     <div class="contenido" style="${contentPadStyle()}">
       <div class="zona-util">
         <div class="hoja-titulo"><h2>Cronograma de obra</h2><span class="folio">${folio}</span></div>
+        ${general ? `<div class="crono-resumen">Estado general a la fecha del informe: <span class="estado-chip-print ${general.cls}">${general.label}</span></div>` : ''}
         <table class="crono-table">
-          <thead><tr><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Peso</th><th>Avance</th><th>Programación</th></tr></thead>
+          <thead><tr><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Peso</th><th>Avance</th><th>Programación</th><th>Estado</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
