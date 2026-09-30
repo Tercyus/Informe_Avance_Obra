@@ -249,6 +249,11 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 .hoja-titulo .folio{font-size:calc(var(--doc-fs)*0.78); color:var(--ink-dim);}
 .cuerpo-texto{font-size:var(--doc-fs); line-height:1.65; white-space:pre-wrap;}
 .cuerpo-texto:empty::before{content:attr(data-empty); color:#b8b2a4; font-style:italic;}
+.obs-cuerpo{font-size:var(--doc-fs); line-height:1.5;}
+.obs-texto{margin:0 0 0.9mm;}
+.obs-titulo{font-weight:700; margin:0 0 1.4mm;}
+.obs-texto.obs-gap{margin-top:3mm;}
+.obs-titulo.obs-gap{margin-top:4.5mm;}
 .resumen-lista{list-style:none; margin:0; padding:0;}
 .resumen-lista li{font-size:var(--doc-fs); line-height:1.6; padding:0 0 2.4mm 4.2mm; position:relative;}
 .resumen-lista li::before{content:"–"; position:absolute; left:0; color:var(--accent); font-weight:700;}
@@ -2451,6 +2456,25 @@ function buildFotoPage(grupo, folio, indexBase, pageNo, totalPages){
   </div>`;
 }
 
+/* Interpreta el texto de observaciones por líneas: títulos numerados ("1. Algo"), párrafos y separaciones.
+   Lo usan la hoja del informe (PDF/vista previa) y el Word, para que se vean igual. */
+function parseObservaciones(texto){
+  const lineas = String(texto||'').replace(/\r/g,'').split('\n');
+  const bloques = []; let hayGap = false;
+  lineas.forEach(raw=>{
+    const t = raw.trim();
+    if(!t){ hayGap = bloques.length>0; return; }
+    const esTitulo = /^\d+[\.\)]\s+\S/.test(t) && t.length <= 100 && !/[.;,:]$/.test(t);
+    bloques.push({ tipo: esTitulo ? 'titulo' : 'texto', texto: t, gap: hayGap });
+    hayGap = false;
+  });
+  return bloques;
+}
+function observacionesHTML(texto){
+  const b = parseObservaciones(texto);
+  if(!b.length) return '<div class="cuerpo-texto" data-empty="Sin observaciones registradas."></div>';
+  return '<div class="obs-cuerpo">' + b.map((x,i)=>`<div class="obs-${x.tipo}${x.gap && i>0 ? ' obs-gap' : ''}">${esc(x.texto)}</div>`).join('') + '</div>';
+}
 function buildFirmasPage(folio, pageNo, totalPages){
   const [f1,f2] = state.firmas;
   return `
@@ -2459,7 +2483,7 @@ function buildFirmasPage(folio, pageNo, totalPages){
     <div class="contenido" style="${contentPadStyle()}">
       <div class="zona-util">
         <div class="hoja-titulo"><h2>Observaciones y firmas</h2><span class="folio">${folio}</span></div>
-        <div class="cuerpo-texto" data-empty="Sin observaciones registradas.">${esc(state.informe.observaciones)}</div>
+        ${observacionesHTML(state.informe.observaciones)}
         <div class="firmas-row">
           <div class="firma-box"><div class="linea"></div><div class="nom">${esc(f1.nombre)||'&nbsp;'}</div><div class="cargo">${esc(f1.cargo)}</div></div>
           <div class="firma-box"><div class="linea"></div><div class="nom">${esc(f2.nombre)||'&nbsp;'}</div><div class="cargo">${esc(f2.cargo)}</div></div>
@@ -2728,16 +2752,31 @@ async function exportWord(){
     }
 
     children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Observaciones y novedades'})]}));
-    children.push(new Paragraph({ spacing:{after:500}, children:[new TextRun({text:i.observaciones || 'Sin observaciones registradas.', size:21})]}));
+    const obsBloques = parseObservaciones(i.observaciones);
+    if(!obsBloques.length){
+      children.push(new Paragraph({ spacing:{after:500}, children:[new TextRun({text:'Sin observaciones registradas.', italics:true, color:'8A8578'})]}));
+    }else{
+      obsBloques.forEach((b, idx)=>{
+        const esTitulo = b.tipo==='titulo';
+        const esUltimo = idx===obsBloques.length-1;
+        const antes = idx===0 ? 0 : (esTitulo ? 250 : (b.gap ? 160 : 0));
+        const despues = esUltimo ? 300 : (esTitulo ? 90 : 60);
+        children.push(new Paragraph({
+          keepNext: esTitulo || esUltimo,
+          spacing:{ before:antes, after:despues, line:288 },
+          children:[new TextRun({ text:b.texto, bold:esTitulo })]
+        }));
+      });
+    }
 
     const [f1,f2] = state.firmas;
-    children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[ new TableRow({ children:[
+    children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[ new TableRow({ cantSplit:true, children:[
       new TableCell({ borders:cellBorders, width:{size:50,type:WidthType.PERCENTAGE}, children:[
-        new Paragraph({alignment:AlignmentType.CENTER, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f1.nombre||' ', bold:true})]}),
+        new Paragraph({alignment:AlignmentType.CENTER, keepNext:true, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f1.nombre||' ', bold:true})]}),
         new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:f1.cargo||'', size:18, color:'565049'})]}),
       ]}),
       new TableCell({ borders:cellBorders, width:{size:50,type:WidthType.PERCENTAGE}, children:[
-        new Paragraph({alignment:AlignmentType.CENTER, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f2.nombre||' ', bold:true})]}),
+        new Paragraph({alignment:AlignmentType.CENTER, keepNext:true, border:{top:{style:BorderStyle.SINGLE,size:6,color:'1A1D21'}}, spacing:{before:400}, children:[new TextRun({text:f2.nombre||' ', bold:true})]}),
         new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:f2.cargo||'', size:18, color:'565049'})]}),
       ]}),
     ]})]}));
