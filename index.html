@@ -638,6 +638,13 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
           <button class="btn-ai" id="btn-ai-cronograma">📷 Reconocer cronograma con IA (foto, PDF o captura)</button>
           <button class="upload-btn" id="btn-import-cronograma">📋 Importar desde Claude (pegar texto)</button>
           <input type="file" id="file-crono-img" accept="image/*,application/pdf" style="display:none;">
+          <div class="field">
+            <label for="sel-crono-word">En el Word, mostrar el cronograma como</label>
+            <select id="sel-crono-word">
+              <option value="imagen">Imagen idéntica a la app (no editable)</option>
+              <option value="tabla">Tabla de Word (editable, más simple)</option>
+            </select>
+          </div>
           <button class="upload-btn" id="btn-add-actividad">+ Agregar actividad</button>
           <div id="crono-list"></div>
           <div class="crono-total" id="crono-total"></div>
@@ -765,6 +772,7 @@ function blankState(prevTamanoHoja, prevFuenteDoc, prevTamanoFuente){
     membreteAssetId:null,
     membreteUrl:null,
     incluirLogo:true,
+    cronoWordModo:'imagen',
     margenes:{top:35,bottom:25,left:20,right:20},
     fotosPorHoja:2,
     tamanoHoja:prevTamanoHoja||'carta',
@@ -783,6 +791,26 @@ function resetStateToDefaults(){
   nextFotoId = 1; nextActividadId = 1;
 }
 function fotoSrc(f){ return (f && (f.src || f.url)) || ''; }
+/* Recorta la imagen para llenar una caja de proporción dada (equivale a object-fit:cover del PDF).
+   Así en Word las fotos no se deforman. Si falla, devuelve los bytes originales. */
+async function imagenCoverBytes(src, aspect, anchoPx){
+  try{
+    const img = await new Promise((res,rej)=>{
+      const im = new Image();
+      if(!String(src).startsWith('data:')) im.crossOrigin = 'anonymous';
+      im.onload = ()=>res(im); im.onerror = rej; im.src = src;
+    });
+    const w = anchoPx || 1000, h = Math.max(1, Math.round(w/aspect));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0,0,w,h);
+    const s = Math.max(w/img.width, h/img.height);
+    const dw = img.width*s, dh = img.height*s;
+    g.drawImage(img, (w-dw)/2, (h-dh)/2, dw, dh);
+    return dataURLToUint8(c.toDataURL('image/jpeg', 0.86));
+  }catch(e){
+    return await imageBytes(src);
+  }
+}
 async function imageBytes(srcOrUrl){
   if(!srcOrUrl) return null;
   try{
@@ -1269,6 +1297,7 @@ function applyCloudData(data){
   state.cronograma = mergeCronograma(session.proyectoActual && session.proyectoActual.cronograma, avancesMap||{});
   state.margenes = data.margenes||state.margenes;
   state.incluirLogo = data.incluirLogo!==false;
+  state.cronoWordModo = data.cronoWordModo || 'imagen';
   state.fotosPorHoja = data.fotosPorHoja||state.fotosPorHoja;
   state.tamanoHoja = data.tamanoHoja||state.tamanoHoja;
   state.fuenteDoc = data.fuenteDoc||state.fuenteDoc;
@@ -1295,7 +1324,7 @@ function cloudPayloadFromState(){
     fotos: state.fotos.map(f=>({id:f.id, desc:f.desc, ubicacion:f.ubicacion, fecha:f.fecha, assetId:f.assetId||null, url:f.url||null, actividadId:f.actividadId||null})),
     membreteAssetId: state.membreteAssetId||null,
     membreteUrl: state.membreteUrl||null,
-    margenes: state.margenes, fotosPorHoja: state.fotosPorHoja, tamanoHoja: state.tamanoHoja, incluirLogo: state.incluirLogo,
+    margenes: state.margenes, fotosPorHoja: state.fotosPorHoja, tamanoHoja: state.tamanoHoja, incluirLogo: state.incluirLogo, cronoWordModo: state.cronoWordModo,
     fuenteDoc: state.fuenteDoc, tamanoFuente: state.tamanoFuente, firmas: state.firmas, versiones: state.versiones
   };
 }
@@ -1500,6 +1529,7 @@ function hydrateForm(){
   document.getElementById('m-right').value = state.margenes.right;
   document.getElementById('sel-hoja').value = state.tamanoHoja;
   document.getElementById('chk-incluir-logo').checked = state.incluirLogo!==false;
+  document.getElementById('sel-crono-word').value = state.cronoWordModo || 'imagen';
   document.querySelectorAll('#fotos-por-hoja .chip').forEach(c=>{
     c.classList.toggle('active', Number(c.dataset.n)===state.fotosPorHoja);
   });
@@ -1605,6 +1635,9 @@ document.getElementById('f2-cargo').addEventListener('input', e=>{ state.firmas[
 });
 document.getElementById('sel-hoja').addEventListener('change', e=>{
   state.tamanoHoja = e.target.value; scheduleRender(); scheduleSave();
+});
+document.getElementById('sel-crono-word').addEventListener('change', e=>{
+  state.cronoWordModo = e.target.value; scheduleSave();
 });
 document.getElementById('chk-incluir-logo').addEventListener('change', e=>{
   state.incluirLogo = e.target.checked; scheduleRender(); scheduleSave();
@@ -2317,8 +2350,19 @@ function buildResumenPage(folio, pageNo, totalPages){
   </div>`;
 }
 
-const CRONO_FILAS_POR_HOJA = 11;
-function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
+const CRONO_FILAS_POR_HOJA = 13;
+function cronoRangoFechas(cronoValido){
+  const fechas = cronoValido.flatMap(a=>[a.inicio,a.fin]).filter(Boolean).map(d=>new Date(d+'T00:00:00'));
+  if(state.informe.desde) fechas.push(new Date(state.informe.desde+'T00:00:00'));
+  if(state.informe.hasta) fechas.push(new Date(state.informe.hasta+'T00:00:00'));
+  return {
+    minDate: fechas.length ? new Date(Math.min(...fechas)) : new Date(),
+    maxDate: fechas.length ? new Date(Math.max(...fechas)) : new Date()
+  };
+}
+/* Tabla del cronograma (resumen de estado + filas con barra Gantt y chip de estado).
+   La usan la hoja del informe (PDF/vista previa) y la captura como imagen para Word. */
+function cronoTablaHTML(grupo, minDate, maxDate){
   const rango = (maxDate - minDate) || 1;
   const fechaRef = fechaReferenciaCronograma();
   const rows = grupo.map(a=>{
@@ -2346,21 +2390,38 @@ function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
     </tr>`;
   }).join('');
   const general = estadoGeneralProyecto();
+  return `${general ? `<div class="crono-resumen">Estado general a la fecha del informe: <span class="estado-chip-print ${general.cls}">${general.label}</span></div>` : ''}
+        <table class="crono-table">
+          <thead><tr><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Peso</th><th>Avance</th><th>Programación</th><th>Estado</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+}
+function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
   return `
   <div class="pagina" style="${pageStyle()}">
     ${membreteHTML()}
     <div class="contenido" style="${contentPadStyle()}">
       <div class="zona-util">
         <div class="hoja-titulo"><h2>Cronograma de obra</h2><span class="folio">${folio}</span></div>
-        ${general ? `<div class="crono-resumen">Estado general a la fecha del informe: <span class="estado-chip-print ${general.cls}">${general.label}</span></div>` : ''}
-        <table class="crono-table">
-          <thead><tr><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Peso</th><th>Avance</th><th>Programación</th><th>Estado</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        ${cronoTablaHTML(grupo, minDate, maxDate)}
       </div>
       <div class="num-pagina">${pageNo} / ${totalPages}</div>
     </div>
   </div>`;
+}
+
+/* Captura una hoja de cronograma como imagen PNG (para incrustarla idéntica en Word). */
+async function cronoGrupoComoImagen(grupo, minDate, maxDate, anchoMm){
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed; left:-99999px; top:0;';
+  host.innerHTML = `<div class="pagina" style="width:${anchoMm}mm; height:auto; box-shadow:none; overflow:visible; background:#fff;">${cronoTablaHTML(grupo, minDate, maxDate)}</div>`;
+  document.body.appendChild(host);
+  try{
+    const canvas = await html2canvas(host.firstElementChild, { scale:2.5, useCORS:true, backgroundColor:'#ffffff' });
+    return { dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height };
+  }finally{
+    document.body.removeChild(host);
+  }
 }
 
 function nombreActividad(id){
@@ -2419,11 +2480,7 @@ function buildAllPagesHTML(){
   html += buildPortada(pageNo++, totalPages);
   html += buildResumenPage('Sección 1', pageNo++, totalPages);
   if(cronoGrupos.length){
-    const fechas = cronoValido.flatMap(a=>[a.inicio,a.fin]).filter(Boolean).map(d=>new Date(d+'T00:00:00'));
-    if(state.informe.desde) fechas.push(new Date(state.informe.desde+'T00:00:00'));
-    if(state.informe.hasta) fechas.push(new Date(state.informe.hasta+'T00:00:00'));
-    const minDate = fechas.length ? new Date(Math.min(...fechas)) : new Date();
-    const maxDate = fechas.length ? new Date(Math.max(...fechas)) : new Date();
+    const { minDate, maxDate } = cronoRangoFechas(cronoValido);
     cronoGrupos.forEach((g,idx)=>{
       html += buildCronoPage(g, 'Sección 2 · '+(idx+1)+'/'+cronoGrupos.length, pageNo++, totalPages, minDate, maxDate);
     });
@@ -2480,7 +2537,8 @@ async function exportWord(){
   showModal('Generando documento Word…');
   try{
     const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, ImageRun,
-            Header, HeadingLevel, AlignmentType, WidthType, BorderStyle, VerticalAlign } = window.docx;
+            Header, HeadingLevel, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType,
+            HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType } = window.docx;
 
     const dim = PAGE_MM[state.tamanoHoja];
     const pxW = Math.round(dim.w * 3.78), pxH = Math.round(dim.h * 3.78);
@@ -2490,8 +2548,15 @@ async function exportWord(){
       const membreteBytes = await imageBytes(state.membrete);
       if(membreteBytes){
         headerChildren.push(new Paragraph({
-          children:[ new ImageRun({ data: membreteBytes, transformation:{ width: pxW*0.53, height: pxH*0.53 }, type:'jpg' }) ],
-          alignment: AlignmentType.CENTER
+          children:[ new ImageRun({
+            data: membreteBytes, transformation:{ width: pxW, height: pxH }, type:'jpg',
+            floating:{
+              horizontalPosition:{ relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+              verticalPosition:{ relative: VerticalPositionRelativeFrom.PAGE, offset: 0 },
+              behindDocument: true, allowOverlap: true, lockAnchor: true,
+              wrap:{ type: TextWrappingType.NONE }
+            }
+          }) ]
         }));
       }
     }
@@ -2517,14 +2582,14 @@ async function exportWord(){
         ]}));
       }
     }
-    children.push(new Paragraph({ text:'INFORME TÉCNICO · AVANCE DE OBRA', alignment:AlignmentType.CENTER, spacing:{after:80}, children:[new TextRun({text:'INFORME TÉCNICO · AVANCE DE OBRA', bold:true, size:16, color:'3D5A73'})] }));
+    children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:80}, children:[new TextRun({text:'INFORME TÉCNICO · AVANCE DE OBRA', bold:true, size:16, color:'3D5A73'})] }));
     children.push(new Paragraph({ heading:HeadingLevel.TITLE, alignment:AlignmentType.CENTER, children:[new TextRun({text:p.nombre||'Proyecto sin nombre', bold:true, size:40})]}));
     children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:300}, children:[new TextRun({text:`Informe N.º ${i.numero||'—'}  ·  Período ${fmtFecha(i.desde)} — ${fmtFecha(i.hasta)}`, size:20, color:'565049'})]}));
     children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[
       dpRow('CLIENTE', p.cliente), dpRow('UBICACIÓN', p.ubicacion), dpRow('CONTRATISTA', p.contratista),
       dpRow('INTERVENTORÍA', p.interventor), dpRow('CONTRATO / REF.', p.contrato),
       dpRow('FECHA EMISIÓN', fmtFecha(i.fecha)), dpRow('ELABORADO POR', (i.elabora||'—')+(i.cargo?' — '+i.cargo:'')),
-      dpRow('AVANCE GENERAL', i.avance+'%'),
+      dpRow('AVANCE GENERAL', i.avance+'%'+(estadoGeneralProyecto()? '   ·   '+estadoGeneralProyecto().label.toUpperCase() : '')),
     ]}));
     if(p.mapSnapshot){
       const mapBytes = await imageBytes(p.mapSnapshot);
@@ -2550,53 +2615,113 @@ async function exportWord(){
 
     const cronoValidos = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
     if(cronoValidos.length){
-      children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Cronograma de obra'})]}));
-      const crHeader = new TableRow({ tableHeader:true, children:['Actividad','Inicio','Fin','Peso','Avance'].map(h=>
-        new TableCell({ borders:cellBorders, shading:{fill:'EFEBE0'}, children:[new Paragraph({children:[new TextRun({text:h,bold:true,size:18})]})]})
-      )});
-      const crRows = cronoValidos.map(a=> new TableRow({ children:[
-        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:a.actividad||'—', size:18})]})]}),
-        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:fmtFecha(a.inicio), size:18})]})]}),
-        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:fmtFecha(a.fin), size:18})]})]}),
-        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:(a.peso||0)+'%', size:18})]})]}),
-        new TableCell({ borders:cellBorders, children:[new Paragraph({children:[new TextRun({text:(a.avance||0)+'%', size:18})]})]}),
-      ]}));
-      children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:[crHeader, ...crRows] }));
+      const modoCrono = state.cronoWordModo || 'imagen';
+      const gruposCrono = chunkBalanced(cronoValidos, CRONO_FILAS_POR_HOJA);
+      let cronoComoImagenOk = false;
+      if(modoCrono==='imagen' && window.html2canvas){
+        try{
+          const { minDate, maxDate } = cronoRangoFechas(cronoValidos);
+          const anchoMm = dim.w - state.margenes.left - state.margenes.right;
+          const altoDisponibleMm = dim.h - state.margenes.top - state.margenes.bottom - 22;
+          const piezas = [];
+          for(let g=0; g<gruposCrono.length; g++){
+            document.getElementById('export-modal-text').textContent = `Generando Word… cronograma ${g+1} de ${gruposCrono.length}`;
+            const img = await cronoGrupoComoImagen(gruposCrono[g], minDate, maxDate, anchoMm);
+            let wMm = anchoMm, hMm = anchoMm * img.h / img.w;
+            if(hMm > altoDisponibleMm){ hMm = altoDisponibleMm; wMm = hMm * img.w / img.h; }
+            piezas.push({ img, wPx: Math.round(wMm*3.7795), hPx: Math.round(hMm*3.7795) });
+          }
+          piezas.forEach((pz, g)=>{
+            const titulo = 'Cronograma de obra' + (piezas.length>1 ? ` (${g+1}/${piezas.length})` : '');
+            children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:titulo})]}));
+            children.push(new Paragraph({ alignment:AlignmentType.CENTER, children:[
+              new ImageRun({ data: dataURLToUint8(pz.img.dataUrl), transformation:{ width:pz.wPx, height:pz.hPx }, type:'png' })
+            ]}));
+          });
+          cronoComoImagenOk = true;
+        }catch(errImg){ cronoComoImagenOk = false; /* si falla la captura, se usa la tabla editable */ }
+      }
+      if(!cronoComoImagenOk){
+        const estColores = {
+          verde:{fill:'DCEFE0', color:'2B6B3F'}, ambar:{fill:'F7E7D0', color:'8A5A1F'},
+          rojo:{fill:'F6DBD6', color:'963527'}, neutro:{fill:'EEECE4', color:'8A8578'}
+        };
+        const fechaRefC = fechaReferenciaCronograma();
+        const general = estadoGeneralProyecto();
+        children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Cronograma de obra'})]}));
+        if(general){
+          const cg = estColores[general.cls];
+          children.push(new Paragraph({ spacing:{after:140}, children:[
+            new TextRun({text:'Estado general a la fecha del informe:  ', size:18, color:'565049'}),
+            new TextRun({text:' '+general.label.toUpperCase()+' ', bold:true, size:17, color:cg.color, shading:{ type:ShadingType.CLEAR, color:'auto', fill:cg.fill }})
+          ]}));
+        }
+        const anchoContenidoTw = Math.round((dim.w - state.margenes.left - state.margenes.right) * 56.7);
+        const fracc = [0.36, 0.14, 0.14, 0.09, 0.10, 0.17];
+        const colTw = fracc.map(f=>Math.round(anchoContenidoTw*f));
+        let colIdx = 0;
+        const celda = (txt, opts={})=> new TableCell({ borders:cellBorders, width:{ size: colTw[(colIdx++)%6], type:WidthType.DXA }, verticalAlign:VerticalAlign.CENTER,
+          margins:{ top:50, bottom:50, left:80, right:80 }, ...(opts.fill? {shading:{ type:ShadingType.CLEAR, color:'auto', fill:opts.fill }}:{}), children:[
+          new Paragraph({ alignment: opts.center? AlignmentType.CENTER : AlignmentType.LEFT, children:[new TextRun({text:txt, size:opts.size||18, bold:!!opts.bold, color:opts.color})] })
+        ]});
+        const crHeader = new TableRow({ tableHeader:true, children:['Actividad','Inicio','Fin','Peso','Avance','Estado'].map(h=> celda(h, {fill:'EFEBE0', bold:true, center:h!=='Actividad'}))});
+        const crRows = cronoValidos.map(a=>{
+          const est = estadoActividad(a, fechaRefC); const ce = estColores[est.cls] || estColores.neutro;
+          return new TableRow({ cantSplit:true, children:[
+            celda(a.actividad||'—'),
+            celda(fmtFecha(a.inicio), {center:true}), celda(fmtFecha(a.fin), {center:true}),
+            celda((a.peso||0)+'%', {center:true}), celda((a.avance||0)+'%', {center:true}),
+            celda(est.label.toUpperCase(), {center:true, bold:true, size:15, color:ce.color, fill:ce.fill})
+          ]});
+        });
+        children.push(new Table({ width:{ size: anchoContenidoTw, type:WidthType.DXA }, columnWidths: colTw, rows:[crHeader, ...crRows] }));
+      }
       children.push(new Paragraph({ text:'', spacing:{after:200} }));
     }
 
-    children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Registro fotográfico'})]}));
+    children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text: state.fotos.length>state.fotosPorHoja ? `Registro fotográfico (1/${chunkBalanced(state.fotos, state.fotosPorHoja).length})` : 'Registro fotográfico'})]}));
     if(state.fotos.length){
       const porHoja = state.fotosPorHoja || 2;
       const columnas = porHoja===1 ? 1 : 2;
-      const anchoImg = columnas===1 ? 460 : 250;
-      const altoImg = columnas===1 ? 300 : 170;
+      const filasPorGrupo = Math.ceil(porHoja/columnas);
+      const contenidoWmm = dim.w - state.margenes.left - state.margenes.right;
+      const contenidoHmm = dim.h - state.margenes.top - state.margenes.bottom;
+      const celdaWmm = contenidoWmm / columnas;
+      const dispHmm = contenidoHmm - 46;            // título de sección + holgura para que el grupo quepa en una hoja
+      const capHmm = 15;                             // espacio para pie de foto
+      const cajaWmm = celdaWmm - 8;
+      const cajaHmm = Math.max(35, (dispHmm / filasPorGrupo) - capHmm);
+      const mmPx = 3.7795;
+      const celdaTw = Math.round(celdaWmm * 56.7);
       const gruposFotos = chunkBalanced(state.fotos, porHoja);
+      // el título "Registro fotográfico" del primer grupo ya se agregó arriba; se ajusta si hay varios grupos
       for(let gIdx=0; gIdx<gruposFotos.length; gIdx++){
+        document.getElementById('export-modal-text').textContent = `Generando Word… fotografías ${gIdx+1} de ${gruposFotos.length}`;
         const grupo = gruposFotos[gIdx];
+        if(gIdx>0){
+          children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:`Registro fotográfico (${gIdx+1}/${gruposFotos.length})`})]}));
+        }
         const filas = [];
         for(let i=0; i<grupo.length; i+=columnas){
           const celdas = [];
           for(let c=0; c<columnas; c++){
             const f = grupo[i+c];
-            if(!f){ celdas.push(new TableCell({ borders:cellBorders, width:{size:100/columnas,type:WidthType.PERCENTAGE}, children:[new Paragraph({text:''})] })); continue; }
-            const bytes = await imageBytes(fotoSrc(f));
+            const base = { borders:cellBorders, width:{ size:celdaTw, type:WidthType.DXA }, margins:{ top:40, bottom:40, left:80, right:80 } };
+            if(!f){ celdas.push(new TableCell({ ...base, children:[new Paragraph({text:''})] })); continue; }
+            const bytes = await imagenCoverBytes(fotoSrc(f), cajaWmm/cajaHmm, 1000);
             const cellChildren = [];
             cellChildren.push(bytes
-              ? new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:40}, children:[new ImageRun({ data:bytes, transformation:{width:anchoImg,height:altoImg}, type:'jpg' })] })
+              ? new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:40}, children:[new ImageRun({ data:bytes, transformation:{ width:Math.round(cajaWmm*mmPx), height:Math.round(cajaHmm*mmPx) }, type:'jpg' })] })
               : new Paragraph({ alignment:AlignmentType.CENTER, children:[new TextRun({text:'[imagen no disponible]', italics:true, size:16})] }));
             const actNombre = nombreActividad(f.actividadId);
-            if(actNombre) cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:20}, children:[new TextRun({text:actNombre.toUpperCase(), size:14, bold:true, color:'C9772A'})] }));
+            if(actNombre) cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:10}, children:[new TextRun({text:actNombre.toUpperCase(), size:14, bold:true, color:'C9772A'})] }));
             const capParts = [f.ubicacion, f.fecha? fmtFecha(f.fecha):null, f.desc].filter(Boolean).join('  ·  ');
-            cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:120}, children:[new TextRun({text:capParts||'—', size:15, color:'565049'})] }));
-            celdas.push(new TableCell({ borders:cellBorders, width:{size:100/columnas,type:WidthType.PERCENTAGE}, children:cellChildren }));
+            cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:80}, children:[new TextRun({text:capParts||'—', size:15, color:'565049'})] }));
+            celdas.push(new TableCell({ ...base, children:cellChildren }));
           }
-          filas.push(new TableRow({ cantSplit:false, children:celdas }));
+          filas.push(new TableRow({ cantSplit:true, children:celdas }));
         }
-        children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:filas }));
-        if(gIdx < gruposFotos.length-1){
-          children.push(new Paragraph({ pageBreakBefore:true, children:[] }));
-        }
+        children.push(new Table({ width:{ size:celdaTw*columnas, type:WidthType.DXA }, columnWidths: Array(columnas).fill(celdaTw), rows:filas }));
       }
     }else{
       children.push(new Paragraph({children:[new TextRun({text:'Aún no se han agregado fotografías.', italics:true, color:'8A8578'})]}));
@@ -2618,7 +2743,15 @@ async function exportWord(){
     ]})]}));
 
     const doc = new Document({
-      styles:{ default:{ document:{ run:{ font:docxFont, size:docxSize } } } },
+      styles:{
+        default:{ document:{ run:{ font:docxFont, size:docxSize } } },
+        paragraphStyles:[{
+          id:'Heading1', name:'Heading 1', basedOn:'Normal', next:'Normal', quickFormat:true,
+          run:{ font:docxFont, size:26, bold:true, color:'1A1D21' },
+          paragraph:{ spacing:{ before:120, after:200 }, keepNext:true,
+            border:{ bottom:{ style:BorderStyle.SINGLE, size:8, color:'1A1D21', space:4 } } }
+        }]
+      },
       sections:[{
         properties:{ page:{ size:{ width: Math.round(dim.w*56.7), height: Math.round(dim.h*56.7) },
           margin:{ top: Math.round(state.margenes.top*56.7), bottom: Math.round(state.margenes.bottom*56.7),
