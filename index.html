@@ -197,6 +197,7 @@ body{
 .estado-chip.ambar{background:#4a3a1f; color:#e6a25c;}
 .estado-chip.rojo{background:#3a1f1f; color:#e08a7d;}
 .estado-chip.neutro{background:#3a424d; color:var(--text-faint);}
+.estado-chip.final{background:#1f3346; color:#8fb9dc;}
 .avance-slider-row{display:flex; align-items:center; gap:8px;}
 .avance-slider{flex:1; accent-color:var(--accent);}
 .avance-slider-val{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--accent); width:34px; text-align:right; flex:0 0 auto;}
@@ -289,6 +290,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 .estado-chip-print.ambar{background:#f7e7d0; color:#8a5a1f;}
 .estado-chip-print.rojo{background:#f6dbd6; color:#963527;}
 .estado-chip-print.neutro{background:#eeece4; color:#8a8578;}
+.estado-chip-print.final{background:#dce8f3; color:#2c5577;}
 
 /* firmas */
 .firmas-row{display:flex; gap:14mm; margin-top:auto; padding-top:10mm;}
@@ -1576,7 +1578,7 @@ function toggleAvanceAuto(recalc){
     if(recalc){ state.informe.avance = val; }
   }
 }
-const ESTADO_CRONO_LABEL = { verde:'Adelantado', ambar:'A tiempo', rojo:'Atrasado', neutro:'Sin fechas' };
+const ESTADO_CRONO_LABEL = { verde:'Adelantado', ambar:'A tiempo', rojo:'Atrasado', neutro:'Sin fechas', final:'Finalizada' };
 function fechaReferenciaCronograma(){
   return state.informe.fecha || new Date().toISOString().slice(0,10);
 }
@@ -1589,6 +1591,7 @@ function avanceEsperado(act, fechaRef){
   return ((ref-ini)/(fin-ini))*100;
 }
 function estadoActividad(act, fechaRef){
+  if((Number(act.avance)||0) >= 100) return { label:ESTADO_CRONO_LABEL.final, cls:'final', dif:0 };
   const esperado = avanceEsperado(act, fechaRef);
   if(esperado==null) return { label:ESTADO_CRONO_LABEL.neutro, cls:'neutro' };
   const dif = (Number(act.avance)||0) - esperado;
@@ -1597,6 +1600,10 @@ function estadoActividad(act, fechaRef){
   return { label:ESTADO_CRONO_LABEL.ambar, cls:'ambar', dif };
 }
 function estadoGeneralProyecto(){
+  const nombradas = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
+  const conPeso = nombradas.filter(a=>Number(a.peso)>0);
+  const base = conPeso.length ? conPeso : nombradas;
+  if(base.length && base.every(a=>(Number(a.avance)||0) >= 100)) return { label:ESTADO_CRONO_LABEL.final, cls:'final', dif:0 };
   const fechaRef = fechaReferenciaCronograma();
   const acts = state.cronograma.filter(a=>a.actividad && a.actividad.trim() && a.inicio && a.fin);
   if(!acts.length) return null;
@@ -2668,7 +2675,8 @@ async function exportWord(){
       if(!cronoComoImagenOk){
         const estColores = {
           verde:{fill:'DCEFE0', color:'2B6B3F'}, ambar:{fill:'F7E7D0', color:'8A5A1F'},
-          rojo:{fill:'F6DBD6', color:'963527'}, neutro:{fill:'EEECE4', color:'8A8578'}
+          rojo:{fill:'F6DBD6', color:'963527'}, neutro:{fill:'EEECE4', color:'8A8578'},
+          final:{fill:'DCE8F3', color:'2C5577'}
         };
         const fechaRefC = fechaReferenciaCronograma();
         const general = estadoGeneralProyecto();
