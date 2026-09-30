@@ -2206,6 +2206,19 @@ function scheduleRender(){
 function chunk(arr, n){
   const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out;
 }
+function chunkBalanced(arr, maxPerPage){
+  if(!arr.length) return [];
+  const totalPages = Math.ceil(arr.length / maxPerPage);
+  const base = Math.floor(arr.length / totalPages);
+  const extra = arr.length % totalPages;
+  const out = []; let idx = 0;
+  for(let p=0; p<totalPages; p++){
+    const size = base + (p < extra ? 1 : 0);
+    out.push(arr.slice(idx, idx+size));
+    idx += size;
+  }
+  return out;
+}
 
 function pageStyle(){
   const dim = PAGE_MM[state.tamanoHoja];
@@ -2397,9 +2410,9 @@ function buildFirmasPage(folio, pageNo, totalPages){
 }
 
 function buildAllPagesHTML(){
-  const fotoGrupos = state.fotos.length ? chunk(state.fotos, state.fotosPorHoja) : [];
+  const fotoGrupos = state.fotos.length ? chunkBalanced(state.fotos, state.fotosPorHoja) : [];
   const cronoValido = state.cronograma.filter(a=>a.actividad && a.actividad.trim());
-  const cronoGrupos = cronoValido.length ? chunk(cronoValido, CRONO_FILAS_POR_HOJA) : [];
+  const cronoGrupos = cronoValido.length ? chunkBalanced(cronoValido, CRONO_FILAS_POR_HOJA) : [];
   const totalPages = 1 + 1 + cronoGrupos.length + fotoGrupos.length + 1; // portada + resumen + cronograma + fotos + firmas
   let pageNo = 1;
   let html = '';
@@ -2553,25 +2566,39 @@ async function exportWord(){
     }
 
     children.push(new Paragraph({ heading:HeadingLevel.HEADING_1, pageBreakBefore:true, children:[new TextRun({text:'Registro fotográfico'})]}));
-    for(const f of state.fotos){
-      let imgPar;
-      const bytes = await imageBytes(fotoSrc(f));
-      if(bytes){
-        imgPar = new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:60}, children:[
-          new ImageRun({ data: bytes, transformation:{ width:380, height:260 }, type:'jpg' })
-        ]});
-      }else{
-        imgPar = new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'[imagen no disponible]', italics:true, size:16})]});
+    if(state.fotos.length){
+      const porHoja = state.fotosPorHoja || 2;
+      const columnas = porHoja===1 ? 1 : 2;
+      const anchoImg = columnas===1 ? 460 : 250;
+      const altoImg = columnas===1 ? 300 : 170;
+      const gruposFotos = chunkBalanced(state.fotos, porHoja);
+      for(let gIdx=0; gIdx<gruposFotos.length; gIdx++){
+        const grupo = gruposFotos[gIdx];
+        const filas = [];
+        for(let i=0; i<grupo.length; i+=columnas){
+          const celdas = [];
+          for(let c=0; c<columnas; c++){
+            const f = grupo[i+c];
+            if(!f){ celdas.push(new TableCell({ borders:cellBorders, width:{size:100/columnas,type:WidthType.PERCENTAGE}, children:[new Paragraph({text:''})] })); continue; }
+            const bytes = await imageBytes(fotoSrc(f));
+            const cellChildren = [];
+            cellChildren.push(bytes
+              ? new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:40}, children:[new ImageRun({ data:bytes, transformation:{width:anchoImg,height:altoImg}, type:'jpg' })] })
+              : new Paragraph({ alignment:AlignmentType.CENTER, children:[new TextRun({text:'[imagen no disponible]', italics:true, size:16})] }));
+            const actNombre = nombreActividad(f.actividadId);
+            if(actNombre) cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:20}, children:[new TextRun({text:actNombre.toUpperCase(), size:14, bold:true, color:'C9772A'})] }));
+            const capParts = [f.ubicacion, f.fecha? fmtFecha(f.fecha):null, f.desc].filter(Boolean).join('  ·  ');
+            cellChildren.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:120}, children:[new TextRun({text:capParts||'—', size:15, color:'565049'})] }));
+            celdas.push(new TableCell({ borders:cellBorders, width:{size:100/columnas,type:WidthType.PERCENTAGE}, children:cellChildren }));
+          }
+          filas.push(new TableRow({ cantSplit:false, children:celdas }));
+        }
+        children.push(new Table({ width:{size:100,type:WidthType.PERCENTAGE}, rows:filas }));
+        if(gIdx < gruposFotos.length-1){
+          children.push(new Paragraph({ pageBreakBefore:true, children:[] }));
+        }
       }
-      children.push(imgPar);
-      const actNombre = nombreActividad(f.actividadId);
-      const capParts = [f.ubicacion, f.fecha? fmtFecha(f.fecha):null, f.desc].filter(Boolean).join('  ·  ');
-      if(actNombre){
-        children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:20}, children:[new TextRun({text:actNombre.toUpperCase(), size:16, bold:true, color:'C9772A'})]}));
-      }
-      children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:260}, children:[new TextRun({text:capParts||'—', size:18, color:'565049'})]}));
-    }
-    if(!state.fotos.length){
+    }else{
       children.push(new Paragraph({children:[new TextRun({text:'Aún no se han agregado fotografías.', italics:true, color:'8A8578'})]}));
     }
 
