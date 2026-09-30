@@ -137,11 +137,11 @@ body{
 }
 .foto-card img{width:64px; height:64px; object-fit:cover; border-radius:5px; flex:0 0 auto;}
 .foto-fields{flex:1; min-width:0;}
-.foto-fields input{
+.foto-fields input, .foto-fields select{
   width:100%; background:var(--panel-2); border:1px solid var(--hairline); color:var(--text);
   padding:5px 7px; border-radius:4px; font-size:12px; margin-bottom:5px; font-family:inherit;
 }
-.foto-fields input:last-child{margin-bottom:0;}
+.foto-fields input:last-child, .foto-fields select:last-child{margin-bottom:0;}
 .foto-actions{display:flex; flex-direction:column; gap:3px; flex:0 0 auto;}
 .foto-actions button{
   background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; padding:2px 4px; border-radius:3px;
@@ -265,6 +265,7 @@ table.cv-print td{padding:1.2mm 2mm; border-bottom:.5px solid var(--paper-line);
 .foto-item .ph img{width:100%; height:100%; object-fit:cover; display:block;}
 .foto-item .cap{font-size:calc(var(--doc-fs)*0.74); color:var(--ink-dim); margin-top:1.3mm; line-height:1.35;}
 .foto-item .cap b{color:var(--ink); font-weight:600;}
+.foto-item .cap .cap-act{color:var(--accent); font-weight:700; text-transform:uppercase; letter-spacing:.02em; font-size:0.9em;}
 
 /* cronograma */
 .crono-table{width:100%; border-collapse:collapse; font-size:calc(var(--doc-fs)*0.82); margin-bottom:5mm;}
@@ -1270,7 +1271,7 @@ function applyCloudData(data){
   state.membreteAssetId = data.membreteAssetId||null;
   state.membreteUrl = data.membreteUrl||null;
   state.membrete = data.membreteUrl || null;
-  state.fotos = (data.fotos||[]).map(f=>({id:f.id, desc:f.desc||'', ubicacion:f.ubicacion||'', fecha:f.fecha||'', assetId:f.assetId||null, url:f.url||null}));
+  state.fotos = (data.fotos||[]).map(f=>({id:f.id, desc:f.desc||'', ubicacion:f.ubicacion||'', fecha:f.fecha||'', assetId:f.assetId||null, url:f.url||null, actividadId:f.actividadId||null}));
   nextFotoId = (state.fotos.reduce((m,f)=>Math.max(m,f.id||0),0))+1;
   nextActividadId = (state.cronograma.reduce((m,a)=>Math.max(m,a.id||0),0))+1;
   if(state.proyecto.mapLat!=null) scheduleMapSnapshot();
@@ -1284,7 +1285,7 @@ function cloudPayloadFromState(){
       autorNombre:state.informe.autorNombre, comentario:state.informe.comentario },
     resumenItems: state.resumenItems,
     avancesCronograma: avancesMapFromCronograma(state.cronograma),
-    fotos: state.fotos.map(f=>({id:f.id, desc:f.desc, ubicacion:f.ubicacion, fecha:f.fecha, assetId:f.assetId||null, url:f.url||null})),
+    fotos: state.fotos.map(f=>({id:f.id, desc:f.desc, ubicacion:f.ubicacion, fecha:f.fecha, assetId:f.assetId||null, url:f.url||null, actividadId:f.actividadId||null})),
     membreteAssetId: state.membreteAssetId||null,
     membreteUrl: state.membreteUrl||null,
     margenes: state.margenes, fotosPorHoja: state.fotosPorHoja, tamanoHoja: state.tamanoHoja,
@@ -1894,7 +1895,7 @@ document.getElementById('file-fotos').addEventListener('change', async e=>{
   showToast('Procesando '+files.length+' foto(s)…');
   for(const file of files){
     const dataUrl = await compressImage(file, 1500, 0.82);
-    const foto = {id:nextFotoId++, src:dataUrl, desc:'', ubicacion:'', fecha:'', assetId:null, url:null};
+    const foto = {id:nextFotoId++, src:dataUrl, desc:'', ubicacion:'', fecha:'', assetId:null, url:null, actividadId:null};
     state.fotos.push(foto);
     if(session.informeActual){
       try{
@@ -1910,6 +1911,8 @@ document.getElementById('file-fotos').addEventListener('change', async e=>{
 function renderFotoList(){
   const wrap = document.getElementById('foto-list');
   wrap.innerHTML = '';
+  const actividadesOpts = state.cronograma.filter(a=>a.actividad && a.actividad.trim())
+    .map(a=>`<option value="${a.id}">${esc(a.actividad)}</option>`).join('');
   state.fotos.forEach((f,idx)=>{
     const card = document.createElement('div'); card.className='foto-card';
     card.innerHTML = `
@@ -1918,14 +1921,19 @@ function renderFotoList(){
         <input type="text" placeholder="Ubicación / zona" value="${esc(f.ubicacion)}" data-k="ubicacion">
         <input type="text" placeholder="Descripción" value="${esc(f.desc)}" data-k="desc">
         <input type="date" value="${f.fecha||''}" data-k="fecha">
+        <select data-k="actividadId">
+          <option value="">Sin actividad del cronograma</option>
+          ${actividadesOpts}
+        </select>
       </div>
       <div class="foto-actions">
         <button data-a="up" title="Subir">↑</button>
         <button data-a="down" title="Bajar">↓</button>
         <button data-a="del" class="del" title="Eliminar">✕</button>
       </div>`;
-    card.querySelectorAll('input').forEach(inp=>{
-      inp.addEventListener('input', ()=>{ f[inp.dataset.k]=inp.value; scheduleRender(); scheduleSave(); });
+    card.querySelector('select[data-k=actividadId]').value = f.actividadId || '';
+    card.querySelectorAll('input, select').forEach(inp=>{
+      inp.addEventListener('input', ()=>{ f[inp.dataset.k]=inp.value||null; scheduleRender(); scheduleSave(); });
     });
     card.querySelector('[data-a=up]').addEventListener('click', ()=>{
       if(idx===0) return;
@@ -2331,13 +2339,20 @@ function buildCronoPage(grupo, folio, pageNo, totalPages, minDate, maxDate){
   </div>`;
 }
 
+function nombreActividad(id){
+  if(!id) return '';
+  const a = state.cronograma.find(x=>String(x.id)===String(id));
+  return a ? a.actividad : '';
+}
 function buildFotoPage(grupo, folio, indexBase, pageNo, totalPages){
   const n = state.fotosPorHoja;
-  const items = grupo.map(f=>`
+  const items = grupo.map(f=>{
+    const act = nombreActividad(f.actividadId);
+    return `
     <div class="foto-item">
       <div class="ph"><img src="${fotoSrc(f)}" alt="${esc(f.ubicacion||f.desc||'Fotografía del avance de obra')}"></div>
-      <div class="cap"><b>${esc(f.ubicacion)||'Sin ubicación'}</b>${f.fecha? ' · '+fmtFecha(f.fecha):''}${f.desc? '<br>'+esc(f.desc):''}</div>
-    </div>`).join('');
+      <div class="cap">${act? `<span class="cap-act">${esc(act)}</span><br>`:''}<b>${esc(f.ubicacion)||'Sin ubicación'}</b>${f.fecha? ' · '+fmtFecha(f.fecha):''}${f.desc? '<br>'+esc(f.desc):''}</div>
+    </div>`;}).join('');
   return `
   <div class="pagina" style="${pageStyle()}">
     ${membreteHTML()}
@@ -2530,7 +2545,11 @@ async function exportWord(){
         imgPar = new Paragraph({alignment:AlignmentType.CENTER, children:[new TextRun({text:'[imagen no disponible]', italics:true, size:16})]});
       }
       children.push(imgPar);
+      const actNombre = nombreActividad(f.actividadId);
       const capParts = [f.ubicacion, f.fecha? fmtFecha(f.fecha):null, f.desc].filter(Boolean).join('  ·  ');
+      if(actNombre){
+        children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:20}, children:[new TextRun({text:actNombre.toUpperCase(), size:16, bold:true, color:'C9772A'})]}));
+      }
       children.push(new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:260}, children:[new TextRun({text:capParts||'—', size:18, color:'565049'})]}));
     }
     if(!state.fotos.length){
